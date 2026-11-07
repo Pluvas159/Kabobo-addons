@@ -140,6 +140,40 @@ test("a session follows its window's events", function()
 	eq(s.open, false)
 end)
 
+test("merchant items from either client API", function()
+	local items = {
+		{ link = "|Hitem:2320::::|h[Coarse Thread]|h", name = "Coarse Thread", price = 10, stack = 1, avail = -1 },
+		{ link = "|Hitem:2678::::|h[Mild Spices]|h", name = "Mild Spices", price = 50, stack = 5, avail = 3 },
+	}
+	GetMerchantNumItems = function() return #items end
+	GetMerchantItemLink = function(i) return items[i].link end
+	C_MerchantFrame = { GetItemInfo = function(i)
+		local it = items[i]
+		return { name = it.name, price = it.price, stackCount = it.stack, numAvailable = it.avail, hasExtendedCost = false }
+	end }
+	local list = ns.MerchantItems()
+	eq(#list, 2)
+	eq(list[1].id, 2320); eq(list[1].name, "Coarse Thread"); eq(list[1].price, 10); eq(list[1].available, -1)
+	eq(list[2].id, 2678); eq(list[2].quantity, 5); eq(list[2].extended, false)
+
+	-- the older global function, when C_MerchantFrame is missing
+	C_MerchantFrame = nil
+	GetMerchantItemInfo = function(i)
+		local it = items[i]
+		return it.name, 0, it.price, it.stack, it.avail, true, true, i == 2
+	end
+	list = ns.MerchantItems()
+	eq(list[2].quantity, 5); eq(list[2].available, 3); eq(list[2].extended, true)
+
+	-- a failing client function costs only that field
+	GetMerchantItemInfo = function() error("client bug") end
+	list = ns.MerchantItems()
+	eq(list[1].name, "Coarse Thread", "name from the link"); eq(list[1].price, nil)
+
+	GetMerchantNumItems, GetMerchantItemLink, GetMerchantItemInfo = nil, nil, nil
+	eq(#ns.MerchantItems(), 0)
+end)
+
 test("a caller turns errors into nil and counts them", function()
 	local api = ns.NewCaller()
 	eq(api:Call(function(a) return a + 1 end, 1), 2)

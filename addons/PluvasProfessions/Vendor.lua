@@ -40,19 +40,6 @@ function V.Record(item)
 	return true
 end
 
-local function itemInfo(i)
-	if C_MerchantFrame and C_MerchantFrame.GetItemInfo then
-		local info = C_MerchantFrame.GetItemInfo(i)
-		if type(info) == "table" then
-			return info.name, info.price, info.hasExtendedCost, info.numAvailable
-		end
-	end
-	if GetMerchantItemInfo then
-		local name, _, price, _, available, _, _, extended = GetMerchantItemInfo(i)
-		return name, price, extended, available
-	end
-end
-
 local function isRecipeItem(link)
 	if not (link and C_Item and C_Item.GetItemInfoInstant) then return false end
 	local _, _, _, _, _, classID, subclassID = C_Item.GetItemInfoInstant(link)
@@ -60,19 +47,14 @@ local function isRecipeItem(link)
 end
 
 function V:Read()
-	if not merchant.open or not GetMerchantNumItems then return end
+	if not merchant.open then return end
 	local npc = UnitName("npc")
 	local zone = GetZoneText and GetZoneText() or nil
 	local count = 0
-	for i = 1, GetMerchantNumItems() or 0 do
-		local link = GetMerchantItemLink(i)
-		if isRecipeItem(link) then
-			local name, price, extended, available = itemInfo(i)
-			name = name or (link and link:match("%[(.-)%]"))
-			if V.Record({ name = name, price = price, extended = extended, available = available,
-				npc = npc, zone = zone }) then
-				count = count + 1
-			end
+	for _, item in ipairs(ns.MerchantItems()) do
+		if isRecipeItem(item.link) then
+			item.npc, item.zone = npc, zone
+			if V.Record(item) then count = count + 1 end
 		end
 	end
 	if count > 0 then

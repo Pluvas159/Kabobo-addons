@@ -22,19 +22,20 @@ end
 
 -- "12s 50c (2 mats unpriced)", or a muted note when no mat has a price.
 function Lines.CostText(cost, missing)
-	if not cost then return muted("no AH prices for mats") end
+	if not cost then return muted("no prices for mats") end
 	if missing > 0 then return Money(cost) .. muted(" (" .. missing .. " mats unpriced)") end
 	return Money(cost)
 end
 
--- One indented line per base mat, most expensive first: "   6x Linen Cloth    6s".
+-- One indented line per base mat, most expensive first: "   6x Linen Cloth    6s", with a
+-- muted "vendor" after mats priced from a vendor.
 function Lines.AddMats(out, mats, max)
 	max = max or Lines.MAX_MATS
 	for i = 1, math.min(#mats, max) do
 		local m = mats[i]
 		out[#out + 1] = {
 			"   " .. C.FormatQty(m.qty) .. "x " .. P.ItemName(m.id),
-			m.cost and Money(m.cost) or muted("no price"),
+			m.cost and (Money(m.cost) .. (m.vendor and muted(" vendor") or "")) or muted("no price"),
 			color = "soft",
 		}
 	end
@@ -67,10 +68,10 @@ function Lines.AddPrices(out, entry, count, now, showHistory)
 	return out
 end
 
--- What the mats for `count` crafted items cost on the AH right now.
+-- What the mats for `count` crafted items cost right now, each at the cheaper of AH and vendor.
 function Lines.AddCraftCost(out, recipe, count, showMats)
 	local cost, missing, mats = C.CostForItems(recipe, count, C.MatPrice, C.RecipeOf)
-	out[#out + 1] = { forStack("Mats cost (AH)", count), Lines.CostText(cost, missing) }
+	out[#out + 1] = { forStack("Mats cost", count), Lines.CostText(cost, missing) }
 	if showMats then Lines.AddMats(out, mats) end
 	return out
 end
@@ -80,6 +81,10 @@ function Lines.Tooltip(item, s, now)
 	local out = {}
 	local entry = P:Get(item.key)
 	if entry then Lines.AddPrices(out, entry, item.count, now, s.tooltipHistory) end
+	local vendor = ns.Vendor:Get(item.id)
+	if vendor then
+		out[#out + 1] = { forStack("Buy from vendor", item.count), Money(math.floor(vendor * item.count + 0.5)) }
+	end
 	if s.tooltipCraft and item.id then
 		local recipe = C:RecipeFor(item.id)
 		if recipe then Lines.AddCraftCost(out, recipe, item.count, s.matsList) end
@@ -98,7 +103,7 @@ function Lines.Craft(summary, showMats)
 	if summary.yield and summary.yield ~= 1 then
 		per = muted(" (per craft, makes " .. string.format("%g", summary.yield) .. ")")
 	end
-	out[#out + 1] = { "Mats cost (AH)" .. per, Lines.CostText(summary.cost, summary.missing) }
+	out[#out + 1] = { "Mats cost" .. per, Lines.CostText(summary.cost, summary.missing) }
 	if showMats ~= false then Lines.AddMats(out, summary.mats or {}) end
 	if summary.value then
 		out[#out + 1] = { "Sells for (AH)", Money(summary.value) }

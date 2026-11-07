@@ -15,11 +15,15 @@ Auction house price tracking and auction profit tracking for **World of Warcraft
 - **Tooltips**: AH market, AH lowest, the 14-day average, and the average price you sold the item at,
   shown with gold, silver and copper coin icons. For a stack in your bags it also shows the
   market value of the whole stack and what is left after the 5% AH cut and the 1 silver deposit.
-- **Craft cost**: for items this character can craft, the tooltip shows what the mats cost on the
-  AH (for the whole stack). Mats you can craft yourself are priced from *their* mats, all the
+- **Craft cost**: for items this character can craft, the tooltip shows what the mats cost
+  (for the whole stack). Each mat is priced at the cheaper of its AH price and its vendor price. Mats you can craft yourself are priced from *their* mats, all the
   way down to the base mats (bag -> bolts -> cloth). Below it, a list of those base mats with
   how many you need and what each costs. Open each profession window once so the
   addon can read your recipes; it rereads them every time you open it.
+- **Vendor prices**: open any vendor window and the addon remembers what it charges for every
+  item it sells for gold in unlimited supply (thread, dyes, vials, flux, ...), for all your
+  characters. Mats priced from a vendor are marked "vendor" in the mats list, and item tooltips
+  show a "Buy from vendor" line.
 - **Profession window**: the selected recipe shows its mats cost, what the item sells for on the
   AH, what is left after the AH cut and deposit, the profit, and the list of base mats.
 - **Bugs stay contained**: if part of the addon keeps erroring, it turns itself off until `/reload`
@@ -56,7 +60,7 @@ Data is kept per realm (ruleset) and faction in the `PluvasAuctionsDB` saved var
 ## Files
 
 Data modules read, store and compute. UI modules only draw, and they refresh when a data module
-sends an addon message (`PricesChanged`, `ScanStateChanged`, `LedgerChanged`). The runtime comes from
+sends an addon message (`PricesChanged`, `VendorPricesChanged`, `ScanStateChanged`, `LedgerChanged`). The runtime comes from
 `Libs/PluvasCore`, the look from `Libs/PluvasUI`.
 
 | File | Role |
@@ -65,6 +69,7 @@ sends an addon message (`PricesChanged`, `ScanStateChanged`, `LedgerChanged`). T
 | `Pricing.lua` | Item keys, market value statistics, price database and history |
 | `Scanner.lua` | Full scan (`ReplicateItems`) and passive capture from browse and search results |
 | `Ledger.lua` | Reading auction mail, merging transactions, summaries, gold tracking |
+| `Vendor.lua` | Learns vendor buy prices while a vendor window is open |
 | `Crafting.lua` | Reads your recipes from the profession window, works out mats cost |
 | `Lines.lua` | The label/value lines shown in tooltips and the profession window |
 | `Tooltip.lua` | Tooltip hook and `/pa price` |
@@ -87,6 +92,9 @@ sends an addon message (`PricesChanged`, `ScanStateChanged`, `LedgerChanged`). T
   - A profession window closed mid-read no longer keeps being read.
   - Errors in the mail capture hooks are contained.
   - The tooltip and the profession panel now share their lines, so they always match.
+  - Vendor prices: mats are priced at the cheaper of AH and vendor, learned from the vendor
+    windows you open. The mats list marks vendor-priced mats, and tooltips show the vendor
+    price. "Mats cost (AH)" is now "Mats cost".
 - **0.1.1**: tooltip prices use gold, silver and copper coin icons. Tooltips show the stack's
   total market value and the amount left after the AH cut and deposit. Tooltips show the AH cost of
   mats for items you can craft, pricing craftable mats from their own mats. The profession

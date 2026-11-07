@@ -17,6 +17,40 @@ function ns:Session(openEvent, closeEvent)
 	return session
 end
 
+-- Merchants -----------------------------------------------------------------------
+--
+-- Every item the open vendor window sells: array of { link, id, name, price, quantity,
+-- extended, available }. price is in copper for one purchase of `quantity` items; available is
+-- -1 for unlimited supply; extended is true when the item also costs tokens or other items.
+-- Call only while a MERCHANT_SHOW / MERCHANT_CLOSED session is open.
+local function merchantItem(i)
+	local link = ns.Try(GetMerchantItemLink, i)
+	local item = { link = link, id = link and tonumber(link:match("item:(%d+)")) }
+	local info = C_MerchantFrame and ns.Try(C_MerchantFrame.GetItemInfo, i)
+	if type(info) == "table" then
+		item.name, item.price, item.quantity = info.name, info.price, info.stackCount
+		item.extended, item.available = info.hasExtendedCost, info.numAvailable
+	elseif GetMerchantItemInfo then
+		local ok, name, _, price, quantity, available, _, _, extended = pcall(GetMerchantItemInfo, i)
+		if ok then
+			item.name, item.price, item.quantity = name, price, quantity
+			item.extended, item.available = extended, available
+		end
+	end
+	item.name = item.name or (link and link:match("%[(.-)%]"))
+	if not (item.link or item.name) then return nil end
+	return item
+end
+
+function ns.MerchantItems()
+	local out = {}
+	for i = 1, ns.Try(GetMerchantNumItems) or 0 do
+		local item = merchantItem(i)
+		if item then out[#out + 1] = item end
+	end
+	return out
+end
+
 -- Callers -------------------------------------------------------------------------
 --
 -- For reading client APIs whose quirks are unknown: an error becomes a nil result and is

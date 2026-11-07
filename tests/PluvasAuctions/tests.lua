@@ -398,7 +398,7 @@ test("profession scan stores learned recipes and the tooltip shows mats cost", f
 	ns.Tooltip:AddLines(tooltip, { key = "2996", id = 2996, count = 3 })
 	local byLabel = {}
 	for _, line in ipairs(lines) do byLabel[line[1]] = line[2] end
-	eq(byLabel["Mats cost (AH)|cff808080 (x3)|r"], PUI.MoneyIcons(750))
+	eq(byLabel["Mats cost|cff808080 (x3)|r"], PUI.MoneyIcons(750))
 	eq(byLabel["   6x item:2589"], PUI.MoneyIcons(600))
 	eq(byLabel["   3x item:2320"], PUI.MoneyIcons(150))
 
@@ -467,20 +467,20 @@ test("profession panel lines", function()
 	local Lines = ns.Lines
 	local lines = Lines.Craft({ cost = 650, missing = 0, yield = 1, value = 1000, net = 935, profit = 285 })
 	eq(#lines, 4)
-	eq(lines[1][1], "Mats cost (AH)")
+	eq(lines[1][1], "Mats cost")
 	eq(lines[1][2], PUI.MoneyIcons(650))
 	eq(lines[2][2], PUI.MoneyIcons(1000))
 	eq(lines[3][2], PUI.MoneyIcons(935))
 	eq(lines[4][2], "|cff40d040+|r" .. PUI.MoneyIcons(285))
 
 	lines = Lines.Craft({ cost = 2000, missing = 1, yield = 2, value = 1000, net = 935, profit = -1065 })
-	eq(lines[1][1], "Mats cost (AH)|cff808080 (per craft, makes 2)|r")
+	eq(lines[1][1], "Mats cost|cff808080 (per craft, makes 2)|r")
 	eq(lines[1][2], PUI.MoneyIcons(2000) .. "|cff808080 (1 mats unpriced)|r")
 	eq(lines[4][2], "|cffff5050-|r" .. PUI.MoneyIcons(1065))
 
 	lines = Lines.Craft({ missing = 2, yield = 1 })
 	eq(#lines, 2)
-	eq(lines[1][2], "|cff808080no AH prices for mats|r")
+	eq(lines[1][2], "|cff808080no prices for mats|r")
 	eq(lines[2][2], "|cff808080no AH price yet|r")
 end)
 
@@ -533,6 +533,81 @@ test("profession panel lists mats", function()
 	eq(lines[2].color, "soft")
 	eq(lines[3][2], PUI.MoneyIcons(50))
 	eq(#Lines.Craft(summary, false), #lines - 2)
+end)
+
+test("vendor visit records what it charges per unit", function()
+	local items = {
+		{ link = "|Hitem:2320::::|h[Coarse Thread]|h", name = "Coarse Thread", price = 10, stack = 1, avail = -1 },
+		{ link = "|Hitem:2678::::|h[Mild Spices]|h", name = "Mild Spices", price = 100, stack = 5, avail = -1 },
+		{ link = "|Hitem:4340::::|h[Gray Dye]|h", name = "Gray Dye", price = 350, stack = 1, avail = 2 },
+		{ link = "|Hitem:9999::::|h[Token Thing]|h", name = "Token Thing", price = 0, stack = 1, avail = -1, ext = true },
+	}
+	GetMerchantNumItems = function() return #items end
+	GetMerchantItemLink = function(i) return items[i].link end
+	C_MerchantFrame = { GetItemInfo = function(i)
+		local it = items[i]
+		return { name = it.name, price = it.price, stackCount = it.stack, numAvailable = it.avail, hasExtendedCost = it.ext or false }
+	end }
+	local changed = 0
+	ns:On("VendorPricesChanged", function() changed = changed + 1 end)
+	_FIRE("MERCHANT_SHOW")
+	_RUN_TIMERS()
+	_FIRE("MERCHANT_CLOSED")
+	eq(ns.Vendor:Get(2320), 10)
+	eq(ns.Vendor:Get(2678), 20, "price per unit, not per purchase")
+	eq(ns.Vendor:Get(4340), nil, "limited supply")
+	eq(ns.Vendor:Get(9999), nil, "no plain gold price")
+	eq(changed, 1)
+
+	-- nothing new on the next visit: no message
+	_FIRE("MERCHANT_SHOW")
+	_RUN_TIMERS()
+	_FIRE("MERCHANT_CLOSED")
+	eq(changed, 1)
+
+	-- and never a merchant read once the window has closed
+	local reads = 0
+	GetMerchantItemLink = function(i) reads = reads + 1; return items[i].link end
+	_FIRE("MERCHANT_SHOW")
+	_FIRE("MERCHANT_CLOSED")
+	_RUN_TIMERS()
+	eq(reads, 0)
+	GetMerchantNumItems, GetMerchantItemLink, C_MerchantFrame = nil, nil, nil
+	ns.db.vendor = {}
+end)
+
+test("mats use the cheaper of AH and vendor prices", function()
+	local items = ns.db.realms[ns.realmKey].items
+	items["2320"] = { m = 50, t = time() }   -- thread on the AH at 50c
+	items["2589"] = { m = 100, t = time() }
+	ns.db.vendor[2320] = 10                    -- ...and 10c at the vendor
+	ns.db.vendor[2589] = 400                   -- a vendor price above the AH is not used
+	ns.db.vendor[4340] = 350                   -- only a vendor sells this one
+	local price, source = CR.MatPrice(2320)
+	eq(price, 10); eq(source, "vendor")
+	price, source = CR.MatPrice(2589)
+	eq(price, 100); eq(source, nil)
+	eq(CR.MatPrice(4340), 350)
+	eq(CR.AHPrice(2320), 50, "sale value stays the AH price")
+
+	local cost, missing, _, mats = CR.CostPerCraft("1:1|2589*2,2320*1,4340*1", CR.MatPrice)
+	eq(cost, 200 + 10 + 350); eq(missing, 0)
+	eq(mats[1].id, 4340); eq(mats[1].vendor, true)
+	eq(mats[2].id, 2589); eq(mats[2].vendor, nil)
+	eq(mats[3].id, 2320); eq(mats[3].vendor, true)
+
+	local lines = ns.Lines.AddMats({}, mats)
+	eq(lines[1][2], PUI.MoneyIcons(350) .. "|cff808080 vendor|r")
+	eq(lines[2][2], PUI.MoneyIcons(200))
+
+	-- the tooltip shows the vendor price, for the whole stack
+	local out = ns.Lines.Tooltip({ key = "2320", id = 2320, count = 20 }, { tooltipHistory = false }, time())
+	local byLabel = {}
+	for _, line in ipairs(out) do byLabel[line[1]] = line[2] end
+	eq(byLabel["Buy from vendor|cff808080 (x20)|r"], PUI.MoneyIcons(200))
+
+	items["2320"], items["2589"] = nil, nil
+	ns.db.vendor = {}
 end)
 
 test("long mat lists end in a '+N more' line", function()

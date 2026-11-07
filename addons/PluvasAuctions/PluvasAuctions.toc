@@ -11,6 +11,7 @@ Libs\PluvasCore\PluvasCore.xml
 Libs\PluvasUI\PluvasUI.xml
 Core.lua
 Pricing.lua
+Vendor.lua
 Scanner.lua
 Ledger.lua
 Crafting.lua

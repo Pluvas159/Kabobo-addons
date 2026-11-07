@@ -52,6 +52,7 @@ ns:Slash({ "/pt", "/pluvasthing" }, {
 | `ns.title`, `ns.version` | From the TOC |
 | `ns.realmKey`, `ns.charKey`, `ns.charName`, `ns.realm`, `ns.faction` | Set at `PLAYER_LOGIN`. `realmKey` = realm-faction (one auction house), `charKey` = realm-character |
 | `ns:Session(openEvent, closeEvent)` | `{ open }` that follows a game window. Call its API only while `open` |
+| `ns.MerchantItems()` | Every item the open vendor window sells (`link`, `id`, `name`, `price` per purchase of `quantity`, `extended`, `available`). Only while a merchant session is open |
 | `ns.NewCaller()` | `caller:Call(fn, ...)` turns errors into nil and counts them in `caller.failures` |
 | `ns:Debounce(name, delay, fn)` | A trigger that runs fn once per burst |
 | `ns:Spread(opts)` | A long loop spread over frames (`count`, `size`, `step`, `alive`, `progress`, `done`) |

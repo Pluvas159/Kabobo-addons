@@ -1,4 +1,4 @@
--- Pluvas' Auctions: what this character can craft, and what the mats cost on the AH.
+-- Pluvas' Auctions: what this character can craft, and what the mats cost (AH or vendor).
 --
 -- Recipes are read only while a profession window is open (TRADE_SKILL_LIST_UPDATE), the one
 -- context the C_TradeSkillUI functions are built for. Tooltips read only the saved copy and
@@ -80,14 +80,16 @@ function C.UnitCost(itemID, priceOf, recipeOf, seen, depth)
 	return total / yield, missing, used
 end
 
--- { [itemID] = qty } scaled by `times` -> array of { id, qty, unit, cost }, most expensive
--- first and unpriced mats last. unit/cost are nil for unpriced mats.
+-- { [itemID] = qty } scaled by `times` -> array of { id, qty, unit, cost, vendor }, most
+-- expensive first and unpriced mats last. unit/cost are nil for unpriced mats; vendor is true
+-- when priceOf says the price is a vendor's (second result "vendor").
 local function matList(used, times, priceOf)
 	local list = {}
 	for id, q in pairs(used) do
 		local qty = q * times
-		local unit = priceOf(id)
-		list[#list + 1] = { id = id, qty = qty, unit = unit, cost = unit and math.floor(unit * qty + 0.5) }
+		local unit, source = priceOf(id)
+		list[#list + 1] = { id = id, qty = qty, unit = unit, cost = unit and math.floor(unit * qty + 0.5),
+			vendor = source == "vendor" or nil }
 	end
 	table.sort(list, function(a, b)
 		if (a.cost ~= nil) ~= (b.cost ~= nil) then return a.cost ~= nil end
@@ -194,10 +196,18 @@ function C.RecipeOf(itemID)
 	return C:RecipeFor(itemID)
 end
 
--- AH price per unit of a mat: market value, or the lowest buyout when there is no market value.
-function C.MatPrice(itemID)
+-- AH price per unit: market value, or the lowest buyout when there is no market value.
+function C.AHPrice(itemID)
 	local entry = P:Get(tostring(itemID))
 	return entry and (entry.m or entry.n) or nil
+end
+
+-- Price per unit of a mat: the cheaper of its AH price and what a vendor charges for it. The
+-- second result is "vendor" when the vendor price is used.
+function C.MatPrice(itemID)
+	local ah, vendor = C.AHPrice(itemID), ns.Vendor:Get(itemID)
+	if vendor and (not ah or vendor <= ah) then return vendor, "vendor" end
+	return ah
 end
 
 -- Saved data --------------------------------------------------------------

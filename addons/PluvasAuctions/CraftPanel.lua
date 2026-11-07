@@ -1,4 +1,4 @@
--- Pluvas' Auctions: AH mats cost, sale value and profit in the profession window.
+-- Pluvas' Auctions: mats cost (AH or vendor), sale value and profit in the profession window.
 --
 -- Hooks the modern profession window (Blizzard_Professions, load-on-demand) with hooksecurefunc
 -- only, and draws into a PUI.LinePanel of our own, so nothing of Blizzard's is replaced.
@@ -15,7 +15,7 @@ local panel
 function CP.SummaryFor(recipeID)
 	local out, recipe = C:ReadSchematic(recipeID)
 	if not out then return nil end
-	return C.CraftSummary(recipe, C.MatPrice, C.RecipeOf, C.MatPrice(out))
+	return C.CraftSummary(recipe, C.MatPrice, C.RecipeOf, C.AHPrice(out))
 end
 
 -- Bottom left of the recipe details, lined up with the "Reagents:" column, growing upward, and

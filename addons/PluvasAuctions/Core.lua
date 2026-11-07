@@ -5,6 +5,7 @@
 --
 -- Addon messages:
 --   PricesChanged          price data was recorded or deleted
+--   VendorPricesChanged    vendor prices were recorded from an open vendor window
 --   ScanStateChanged       Scanner.state / progress, or the auction house opened or closed
 --   LedgerChanged          a sale, purchase or gold balance was recorded, or the ledger reset
 --   SettingChanged(key)    a slash toggle flipped a setting
@@ -19,7 +20,7 @@ ns:Setup({
 			tooltip = true,         -- price lines in item tooltips
 			tooltipHistory = true,  -- the 14-day average line
 			tooltipLedger = true,   -- your own average sale price
-			tooltipCraft = true,    -- AH cost of mats for items this character can craft
+			tooltipCraft = true,    -- AH/vendor cost of mats for items this character can craft
 			professionPanel = true, -- mats cost and profit in the profession window
 			matsList = true,        -- base mats listed under the mats cost
 			historyDays = 60,       -- days of daily price history kept
@@ -30,6 +31,7 @@ ns:Setup({
 		realms = {},  -- [realmKey] = { items = { [itemKey] = entry }, lastScan = time }   (Pricing)
 		ledger = {},  -- [realmKey] = { tx = { transaction, ... } }                        (Ledger)
 		gold = {},    -- [realmKey] = { [charName] = { money, days = { [dayStart] = copper } } }
+		vendor = {},  -- [itemID] = copper per unit, from vendor windows (all characters)   (Vendor)
 		crafts = {},  -- [realmKey] = { [charName] = { [professionID] = { name, r = recipes } } }
 	},
 })
