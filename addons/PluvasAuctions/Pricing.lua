@@ -88,6 +88,32 @@ function P.ComputeStats(listings)
 	return { min = listings[1][1], market = market, qty = total, auctions = n }
 end
 
+-- Selling costs -------------------------------------------------------------
+
+P.AH_CUT = 0.05          -- the auction house keeps 5% of every sale (confirmed from AH invoices)
+-- Deposit per auction: a flat 1 silver on Forever, whatever the item or stack size
+-- (confirmed in game by Pluvas, 2026-11-07).
+P.DEPOSIT = 100
+
+-- Item name from the item cache, or "item:<id>" while the client has not loaded it yet.
+function P.ItemName(itemID)
+	local getInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+	local name
+	if getInfo then
+		local ok, n = pcall(getInfo, itemID)
+		if ok then name = n end
+	end
+	return name or ("item:" .. tostring(itemID))
+end
+
+-- Selling `count` units at `unitPrice`: returns gross, AH cut, and what is left after the cut
+-- and the deposit.
+function P.NetProceeds(unitPrice, count, deposit)
+	local gross = unitPrice * (count or 1)
+	local cut = floor(gross * P.AH_CUT + 0.5)
+	return gross, cut, gross - cut - (deposit or 0)
+end
+
 -- Database ----------------------------------------------------------------
 
 function P.DayIndex(t)

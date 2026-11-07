@@ -104,6 +104,12 @@ Edits are live after `/reload` in game. Newly added addon folders need a game re
   short in tables that grow per item (they are written to disk every logout).
 - **Taint**: never overwrite Blizzard functions or secure frames. Use `hooksecurefunc` /
   `HookScript`. Do not touch protected actions in combat.
+- **Crash safety**: Lua errors never crash the game, but calling a Blizzard C function outside the
+  context it was built for can (`pcall` cannot catch that; see docs/forever-client.md). Tooltips
+  and other hot paths read only saved data and plain item info. Call system APIs
+  (`C_AuctionHouse`, `C_TradeSkillUI`, ...) only while their window is open, from events.
+  Wrap hooks and callbacks in `ns:Guard(name, fn)`, which turns a feature off after repeated
+  errors.
 - **Performance**: spread heavy loops (e.g. full AH scans) over frames with `C_Timer.After(0, ...)`.
 - **Style**: tabs for Lua and TOC files (see `.editorconfig`). Comment why, not what. Keep pure
   logic (math, parsing, matching) in functions that do not read game state, so it can be tested.

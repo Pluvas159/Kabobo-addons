@@ -14,8 +14,15 @@ local function groupDigits(n)
 	return (formatted:gsub("^,", ""))
 end
 
--- Colored "12g 34s 56c" text. Zero parts are left out; nil prints a dash.
-function ns.Money(copper)
+local LETTERS = { GOLD .. "g|r", SILVER .. "s|r", COPPER .. "c|r" }
+-- 0:0 sizes the coin to the line's font height; the x offset of 2 is the gap Blizzard uses.
+local ICONS = {
+	"|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t",
+	"|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t",
+	"|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t",
+}
+
+local function formatMoney(copper, suffix)
 	if copper == nil then return "|cff808080-|r" end
 	copper = floor(copper + 0.5)
 	local sign = ""
@@ -27,10 +34,20 @@ function ns.Money(copper)
 	local s = floor((copper % 10000) / 100)
 	local c = copper % 100
 	local parts = {}
-	if g > 0 then parts[#parts + 1] = groupDigits(g) .. GOLD .. "g|r" end
-	if s > 0 then parts[#parts + 1] = s .. SILVER .. "s|r" end
-	if c > 0 or #parts == 0 then parts[#parts + 1] = c .. COPPER .. "c|r" end
+	if g > 0 then parts[#parts + 1] = groupDigits(g) .. suffix[1] end
+	if s > 0 then parts[#parts + 1] = s .. suffix[2] end
+	if c > 0 or #parts == 0 then parts[#parts + 1] = c .. suffix[3] end
 	return sign .. table.concat(parts, " ")
+end
+
+-- Colored "12g 34s 56c" text. Zero parts are left out; nil prints a dash.
+function ns.Money(copper)
+	return formatMoney(copper, LETTERS)
+end
+
+-- Same as ns.Money, but with gold/silver/copper coin icons instead of letters.
+function ns.MoneyIcons(copper)
+	return formatMoney(copper, ICONS)
 end
 
 -- "45s", "12m", "3h", "5d"

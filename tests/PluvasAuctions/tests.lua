@@ -220,3 +220,276 @@ test("money formatting", function()
 	eq(ns.Money(-10000), "-1|cffffd700g|r")
 	eq(ns.Money(12345670000), "1,234,567|cffffd700g|r")
 end)
+
+test("money formatting with coin icons", function()
+	local G = "|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t"
+	local S = "|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t"
+	local C = "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t"
+	eq(ns.MoneyIcons(0), "0" .. C)
+	eq(ns.MoneyIcons(123456), "12" .. G .. " 34" .. S .. " 56" .. C)
+	eq(ns.MoneyIcons(-10000), "-1" .. G)
+	eq(ns.MoneyIcons(nil), "|cff808080-|r")
+end)
+
+-- Selling costs
+
+test("deposit is a flat 1 silver per auction", function()
+	eq(P.DEPOSIT, 100)
+end)
+
+test("net proceeds take off the 5% cut and the deposit", function()
+	local gross, cut, net = P.NetProceeds(10000, 20, 300)
+	eq(gross, 200000)
+	eq(cut, 10000)
+	eq(net, 189700)
+	gross, cut, net = P.NetProceeds(50, 1, 0)
+	eq(gross, 50)
+	eq(cut, 3)
+	eq(net, 47)
+end)
+
+test("tooltip shows stack total and net after cut and deposit", function()
+	local items = ns.db.realms[ns.realmKey].items
+	items["9999"] = { m = 10000, n = 9000, q = 5, t = time() }
+	local lines = {}
+	local tooltip = { AddDoubleLine = function(_, l, r) lines[#lines + 1] = { l, r } end }
+	ns.Tooltip:AddLines(tooltip, { key = "9999", id = 9999, count = 20 })
+	local byLabel = {}
+	for _, line in ipairs(lines) do byLabel[line[1]] = line[2] end
+	eq(byLabel["AH market x20"], ns.MoneyIcons(200000))
+	eq(byLabel["After cut & deposit|cff808080 (x20)|r"], ns.MoneyIcons(200000 - 10000 - 100))
+
+	-- A single item gets the net line but no stack total.
+	lines = {}
+	ns.Tooltip:AddLines(tooltip, { key = "9999", id = 9999, count = 1 })
+	byLabel = {}
+	for _, line in ipairs(lines) do byLabel[line[1]] = line[2] end
+	eq(byLabel["AH market x1"], nil)
+	eq(byLabel["After cut & deposit"], ns.MoneyIcons(10000 - 500 - 100))
+
+	items["9999"] = nil
+end)
+
+-- Error containment
+
+test("guard reports errors and turns the code off after three", function()
+	local reported, calls = {}, 0
+	local oldHandler = geterrorhandler
+	geterrorhandler = function() return function(err) reported[#reported + 1] = err end end
+	local f = ns:Guard("Test feature", function(x)
+		calls = calls + 1
+		if x == "boom" then error("bad") end
+		return x * 2
+	end)
+	eq(f(21), 42)
+	f("boom"); f("boom"); f("boom")
+	eq(#reported, 3)
+	truthy(reported[1]:find("Test feature: ", 1, true), "error names the feature")
+	eq(ns.disabled["Test feature"], true)
+	eq(f(1), nil)          -- turned off: not even called
+	eq(calls, 4)
+	geterrorhandler = oldHandler
+	ns.disabled["Test feature"] = nil
+end)
+
+-- Crafting
+
+local CR = ns.Crafting
+
+test("recipe strings round-trip", function()
+	local s = CR.Encode(1, 2, { { 2589, 2 }, { 2320, 1 } })
+	eq(s, "1:2|2589*2,2320*1")
+	local lo, hi, mats = CR.Decode(s)
+	eq(lo, 1); eq(hi, 2)
+	eq(#mats, 2)
+	eq(mats[1][1], 2589); eq(mats[1][2], 2)
+	eq(CR.Decode("junk"), nil)
+end)
+
+test("mats cost per crafted item", function()
+	local prices = { [2589] = 100, [2320] = 50 }
+	local priceOf = function(id) return prices[id] end
+	local cost, missing = CR.CostPerItem("1:1|2589*2,2320*1", priceOf)
+	eq(cost, 250); eq(missing, 0)
+	-- 2 items per craft halves the cost per item
+	eq((CR.CostPerItem("2:2|2589*2,2320*1", priceOf)), 125)
+	-- unpriced mats are counted, priced ones still summed
+	cost, missing = CR.CostPerItem("1:1|2589*2,9999*1", priceOf)
+	eq(cost, 200); eq(missing, 1)
+	-- nothing priced at all
+	cost, missing = CR.CostPerItem("1:1|9998*1,9999*1", priceOf)
+	eq(cost, nil); eq(missing, 2)
+end)
+
+test("profession scan stores learned recipes and the tooltip shows mats cost", function()
+	Enum = Enum or {}
+	Enum.CraftingReagentType = { Modifying = 0, Basic = 1, Finishing = 2 }
+	C_TradeSkillUI = {
+		GetBaseProfessionInfo = function() return { professionID = 197, professionName = "Tailoring" } end,
+		GetAllRecipeIDs = function() return { 1, 2, 3 } end,
+		GetRecipeInfo = function(id) return { learned = id ~= 3 } end,
+		GetRecipeSchematic = function(id)
+			if id == 1 then
+				return { outputItemID = 2996, quantityMin = 1, quantityMax = 1, reagentSlotSchematics = {
+					{ reagentType = 1, quantityRequired = 2, reagents = { { itemID = 2589 } } },
+					{ reagentType = 1, quantityRequired = 1, reagents = { { itemID = 2320 } } },
+					{ reagentType = 0, quantityRequired = 1, reagents = { { itemID = 7777 } } },   -- optional
+				} }
+			elseif id == 2 then
+				return { reagentSlotSchematics = {} }   -- an enchant: no item made
+			end
+			return { outputItemID = 3000, reagentSlotSchematics = {
+				{ reagentType = 1, quantityRequired = 1, reagents = { { itemID = 2589 } } } } }
+		end,
+	}
+	CR:OnLogin()
+	_FIRE("TRADE_SKILL_SHOW")
+	_RUN_TIMERS()
+
+	eq(CR:RecipeFor(2996), "1:1|2589*2,2320*1")
+	eq(CR:RecipeFor(3000), nil)   -- recipe 3 is not learned
+
+	local items = ns.db.realms[ns.realmKey].items
+	items["2589"] = { m = 100, t = time() }
+	items["2320"] = { n = 50, t = time() }
+	local lines = {}
+	local tooltip = { AddDoubleLine = function(_, l, r) lines[#lines + 1] = { l, r } end }
+	ns.Tooltip:AddLines(tooltip, { key = "2996", id = 2996, count = 3 })
+	local byLabel = {}
+	for _, line in ipairs(lines) do byLabel[line[1]] = line[2] end
+	eq(byLabel["Mats cost (AH)|cff808080 (x3)|r"], ns.MoneyIcons(750))
+	eq(byLabel["   6x item:2589"], ns.MoneyIcons(600))
+	eq(byLabel["   3x item:2320"], ns.MoneyIcons(150))
+
+	-- a broken client function must not stop the addon: the scan reports and keeps old data
+	local oldHandler = geterrorhandler
+	local reported = 0
+	geterrorhandler = function() return function() reported = reported + 1 end end
+	C_TradeSkillUI.GetRecipeSchematic = function() error("client bug") end
+	ns.Crafting:Scan()
+	_RUN_TIMERS()
+	geterrorhandler = oldHandler
+	eq(CR:RecipeFor(2996), "1:1|2589*2,2320*1")
+
+	items["2589"], items["2320"] = nil, nil
+	C_TradeSkillUI = nil
+	CR:OnLogin()
+end)
+
+test("dropped professions are pruned at login", function()
+	local me = CR:CharTable()
+	me[197] = { name = "Tailoring", r = { [2996] = "1:1|2589*1" } }
+	me[164] = { name = "Blacksmithing", r = { [2862] = "1:1|2835*1" } }
+	GetProfessions = function() return 1, nil end
+	GetProfessionInfo = function() return "Tailoring", nil, 1, 300, 0, 0, 197 end
+	CR:PruneProfessions()
+	truthy(me[197], "kept Tailoring")
+	eq(me[164], nil)
+	-- no professions listed yet (early login): keep everything
+	GetProfessions = function() return nil end
+	CR:PruneProfessions()
+	truthy(me[197], "still kept")
+	GetProfessions, GetProfessionInfo = nil, nil
+end)
+
+test("mats cost recurses into mats the character can craft", function()
+	-- Bolt of Linen (2996) = 2 Linen Cloth (2589); Linen Bag (4238) = 3 bolts + 1 thread (2320)
+	local prices = { [2589] = 100, [2320] = 50, [2996] = 999 }
+	local recipes = { [2996] = "1:1|2589*2" }
+	local priceOf = function(id) return prices[id] end
+	local recipeOf = function(id) return recipes[id] end
+	-- bolts priced from cloth (200 each), not their 999 AH price
+	eq((CR.CostPerCraft("1:1|2996*3,2320*1", priceOf, recipeOf)), 650)
+	-- without recipes the AH price of the bolt is used
+	eq((CR.CostPerCraft("1:1|2996*3,2320*1", priceOf)), 3047)
+
+	-- three levels deep, with a recipe that makes 2 per craft
+	recipes[1001] = "2:2|2996*1"          -- 2 of item 1001 per bolt -> 100 each
+	eq((CR.CostPerCraft("1:1|1001*4", priceOf, recipeOf)), 400)
+
+	-- a crafted mat whose own mats are unpriced falls back to its AH price
+	recipes[2996] = "1:1|5555*2"
+	local cost, missing = CR.CostPerCraft("1:1|2996*1", priceOf, recipeOf)
+	eq(cost, 999); eq(missing, 0)
+	-- ...and counts as unpriced when it has no AH price either
+	prices[2996] = nil
+	cost, missing = CR.CostPerCraft("1:1|2996*1,2320*1", priceOf, recipeOf)
+	eq(cost, 50); eq(missing, 1)
+
+	-- cycles stop instead of looping forever
+	recipes = { [1] = "1:1|2*1", [2] = "1:1|1*1" }
+	prices = { [1] = 30, [2] = 70 }
+	eq((CR.CostPerCraft("1:1|1*1", priceOf, recipeOf)), 30)
+end)
+
+test("profession panel lines", function()
+	local PU = ns.ProfessionsUI
+	local lines = PU.BuildLines({ cost = 650, missing = 0, yield = 1, value = 1000, net = 935, profit = 285 })
+	eq(#lines, 4)
+	eq(lines[1][1], "Mats cost (AH)")
+	eq(lines[1][2], ns.MoneyIcons(650))
+	eq(lines[2][2], ns.MoneyIcons(1000))
+	eq(lines[3][2], ns.MoneyIcons(935))
+	eq(lines[4][2], "|cff40d040+|r" .. ns.MoneyIcons(285))
+
+	lines = PU.BuildLines({ cost = 2000, missing = 1, yield = 2, value = 1000, net = 935, profit = -1065 })
+	eq(lines[1][1], "Mats cost (AH)|cff808080 (per craft, makes 2)|r")
+	eq(lines[1][2], ns.MoneyIcons(2000) .. "|cff808080 (1 mats unpriced)|r")
+	eq(lines[4][2], "|cffff5050-|r" .. ns.MoneyIcons(1065))
+
+	lines = PU.BuildLines({ missing = 2, yield = 1 })
+	eq(#lines, 2)
+	eq(lines[1][2], "|cff808080no AH prices for mats|r")
+	eq(lines[2][2], "|cff808080no AH price yet|r")
+end)
+
+test("craft summary: sale value, cut, deposit and profit", function()
+	local prices = { [2589] = 100 }
+	local s = CR.CraftSummary("1:1|2589*2", function(id) return prices[id] end, nil, 1000)
+	eq(s.cost, 200)
+	eq(s.value, 1000)
+	eq(s.net, 1000 - 50 - 100)
+	eq(s.profit, 1000 - 50 - 100 - 200)
+	s = CR.CraftSummary("1:1|2589*2", function(id) return prices[id] end, nil, nil)
+	eq(s.value, nil); eq(s.profit, nil); eq(s.cost, 200)
+end)
+
+test("mats list shows the base mats behind the cost", function()
+	-- Linen Bag (4238) = 3 Bolt of Linen (2996) + 1 Coarse Thread (2320); bolt = 2 Linen (2589)
+	local prices = { [2589] = 100, [2320] = 50 }
+	local recipes = { [2996] = "1:1|2589*2" }
+	local priceOf = function(id) return prices[id] end
+	local recipeOf = function(id) return recipes[id] end
+
+	local cost, missing, yield, mats = CR.CostPerCraft("1:1|2996*3,2320*1,7777*2", priceOf, recipeOf)
+	eq(cost, 650); eq(missing, 1); eq(yield, 1)
+	eq(#mats, 3)
+	eq(mats[1].id, 2589); eq(CR.FormatQty(mats[1].qty), "6"); eq(mats[1].cost, 600)
+	eq(mats[2].id, 2320); eq(CR.FormatQty(mats[2].qty), "1"); eq(mats[2].cost, 50)
+	eq(mats[3].id, 7777); eq(mats[3].cost, nil)   -- unpriced mats go last
+
+	-- for a stack of 4 bags everything is multiplied
+	local total, _, list = CR.CostForItems("1:1|2996*3,2320*1", 4, priceOf, recipeOf)
+	eq(total, 2600)
+	eq(CR.FormatQty(list[1].qty), "24"); eq(list[1].cost, 2400)
+
+	-- a recipe making 2 per craft gives fractional mats per item
+	recipes[1001] = "2:2|2589*3"
+	_, _, list = CR.CostForItems("1:1|1001*1", 1, priceOf, recipeOf)
+	eq(CR.FormatQty(list[1].qty), "1.5"); eq(list[1].cost, 150)
+	eq(CR.FormatQty(1 / 3), "0.33")
+end)
+
+test("profession panel lists mats", function()
+	local PU = ns.ProfessionsUI
+	local summary = { cost = 650, missing = 0, yield = 1, mats = {
+		{ id = 2589, qty = 6, unit = 100, cost = 600 },
+		{ id = 2320, qty = 1, unit = 50, cost = 50 },
+	} }
+	local lines = PU.BuildLines(summary, true)
+	eq(lines[2][1], "   6x item:2589")      -- item not in the (mock) cache: falls back to item:<id>
+	eq(lines[2][2], ns.MoneyIcons(600))
+	eq(lines[2].sub, true)
+	eq(lines[3][2], ns.MoneyIcons(50))
+	eq(#PU.BuildLines(summary, false), #lines - 2)
+end)

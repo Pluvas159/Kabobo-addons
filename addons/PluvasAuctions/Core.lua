@@ -11,6 +11,9 @@ local DEFAULTS = {
 		tooltip = true,        -- show price lines in item tooltips
 		tooltipHistory = true, -- show the 14-day average line
 		tooltipLedger = true,  -- show your own average sale price
+		tooltipCraft = true,   -- show the AH cost of mats for items this character can craft
+		professionPanel = true, -- show mats cost and profit in the profession window
+		matsList = true,       -- list the base mats under the mats cost
 		historyDays = 60,      -- how many days of daily price history to keep
 	},
 	account = {
@@ -19,7 +22,38 @@ local DEFAULTS = {
 	realms = {},              -- [realmKey] = { items = { [itemKey] = entry }, lastScan = time }
 	ledger = {},              -- [realmKey] = { tx = { transaction, ... } }
 	gold = {},                -- [realmKey] = { [charName] = { money = copper, days = { [dayStart] = copper } } }
+	crafts = {},              -- [realmKey] = { [charName] = { [professionID] = { name, r = recipes } } }
 }
+
+-- Error containment ---------------------------------------------------------
+--
+-- Lua errors never crash the game, but an error in a tooltip or event handler repeats every
+-- time it runs. ns:Guard reports the first errors (to BugSack or the error frame) and turns the
+-- guarded code off for the rest of the session after MAX_ERRORS, so a bug degrades one feature
+-- instead of spamming errors. A real client crash comes from calling a Blizzard C function in a
+-- context it does not support; pcall cannot catch that, so such calls must stay out of
+-- tooltips (see docs/forever-client.md).
+
+local MAX_ERRORS = 3
+ns.disabled = {}   -- [name] = true once a guarded function has been turned off
+
+function ns:Guard(name, fn)
+	local errors = 0
+	local function finish(ok, ...)
+		if ok then return ... end
+		local err = ...
+		errors = errors + 1
+		if errors >= MAX_ERRORS then
+			ns.disabled[name] = true
+			ns:Print(name .. " hit repeated errors and is turned off until /reload.")
+		end
+		geterrorhandler()(name .. ": " .. tostring(err))
+	end
+	return function(...)
+		if ns.disabled[name] then return end
+		return finish(pcall(fn, ...))
+	end
+end
 
 -- Event dispatch ----------------------------------------------------------
 
@@ -39,17 +73,14 @@ function ns:On(event, fn)
 			ns:Debug("could not register event", event)
 		end
 	end
-	list[#list + 1] = fn
+	list[#list + 1] = ns:Guard(event .. " handler #" .. (#list + 1), fn)
 end
 
 frame:SetScript("OnEvent", function(_, event, ...)
 	local list = handlers[event]
 	if not list then return end
 	for i = 1, #list do
-		local ok, err = pcall(list[i], ...)
-		if not ok then
-			geterrorhandler()(err)
-		end
+		list[i](...)
 	end
 end)
 
@@ -125,8 +156,7 @@ end
 local function callModules(method)
 	for _, m in ipairs(ns.modules) do
 		if m[method] then
-			local ok, err = pcall(m[method], m)
-			if not ok then geterrorhandler()(err) end
+			ns:Guard(m.name .. ":" .. method, m[method])(m)
 		end
 	end
 end

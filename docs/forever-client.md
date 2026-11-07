@@ -63,8 +63,32 @@ Forever uses the **modern auction house** (`C_AuctionHouse`), with item and comm
   two steps: a server price quote, then a confirmation.
 - Throttling: check `C_AuctionHouse.IsThrottledMessageSystemReady()`. Resend after
   `AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED`.
+- **Deposits: `C_AuctionHouse.CalculateItemDeposit(itemLocation, duration, quantity)` crashes the
+  client** (ACCESS_VIOLATION in Wow.exe, which `pcall` cannot catch). Confirmed 2026-11-07, build
+  70862: it was called from an item tooltip with the AH closed, after `GetItemCommodityStatus`
+  returned `1` (Item). Do not call it, or `CalculateCommodityDeposit`, outside the AH's own sell
+  flow.
+- **Deposit: a flat 1 silver per auction**, whatever the item or stack size (confirmed in game by
+  Pluvas, 2026-11-07).
+- **AH cut: 5%** of the sale (confirmed from AH sale invoices: 1s 50c on 30s, 25c on 5s). The
+  neutral auction houses are not checked yet (15% in Classic).
 - Item links: `item:itemID:enchant:gem1:gem2:gem3:gem4:suffixID:...`. Random-suffix items
   ("of the Bear") share an itemID, so key them by `itemID:suffixID`.
+
+## Professions
+
+- Pluvas' Auctions reads recipes with `C_TradeSkillUI.GetAllRecipeIDs()`, `GetRecipeInfo(id)`
+  (`.learned`), `GetRecipeSchematic(id, false)` (`outputItemID`, `quantityMin/Max`,
+  `reagentSlotSchematics[].reagents[1].itemID`, `.quantityRequired`, `.reagentType`) and
+  `GetBaseProfessionInfo()`. Confirmed working in game (2026-11-07): the recipe panel showed the
+  right mats. It only calls them while the profession window is open (between `TRADE_SKILL_SHOW`
+  and `TRADE_SKILL_CLOSE`).
+- Profession window panel: assumes the modern `ProfessionsFrame` (load-on-demand addon
+  `Blizzard_Professions`) with `ProfessionsFrame.CraftingPage.SchematicForm` and its
+  `Init(recipeInfo)` method. Confirmed in game (2026-11-07). The Track Recipe checkbox sits along
+  the bottom edge of the schematic form, so anything drawn there must stay above it.
+- Not confirmed: whether `GetBaseProfessionInfo().professionID` equals the skill line from
+  `GetProfessionInfo`, so profession pruning matches on name as well.
 
 ## Mail
 
