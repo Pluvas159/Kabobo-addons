@@ -1,10 +1,11 @@
--- Kabobo's Auctions: the full scan button under the auction house window. Left-click scans,
--- right-click opens the ledger. Shows the scan state and counts down the server cooldown.
+-- Kabobo's Auctions: the buttons under the auction house window. Full scan: left-click scans,
+-- right-click opens the ledger; shows the scan state and counts down the server cooldown.
+-- Profit ranking: opens the crafts window, like the button under the profession window.
 local _, ns = ...
 local SB = ns:NewModule("ScanButton")
 local PUI = ns.KaboboUI
 
-local button, ticker
+local button, craftsButton, ticker
 
 -- Text and whether the button can be clicked, for the scanner's state.
 function SB.Label(state, progress, cooldown)
@@ -42,6 +43,22 @@ local function create()
 		},
 	})
 	button:SetPoint("TOPRIGHT", AuctionHouseFrame, "BOTTOMRIGHT", 0, -2)
+
+	craftsButton = PUI.Button(AuctionHouseFrame, {
+		name = "KaboboAuctionsCraftsButton",
+		text = "Profit ranking",
+		width = 130,
+		height = 24,
+		onClick = function() ns.CraftsWindow:Toggle() end,
+		tooltip = {
+			title = ns.title,
+			lines = {
+				"Your learned recipes ranked by profit, with how many sell per day.",
+				{ text = "Click a recipe for its shopping list.", color = "muted" },
+			},
+		},
+	})
+	craftsButton:SetPoint("RIGHT", button, "LEFT", -4, 0)
 end
 
 ns:On("AUCTION_HOUSE_SHOW", function()

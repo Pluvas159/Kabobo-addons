@@ -78,6 +78,18 @@ test("ledger lists your auctions", function()
 	w.recentButton.scripts.OnClick(w.recentButton, "LeftButton")
 end)
 
+test("the auction house gets a Profit ranking button that opens the crafts window", function()
+	AuctionHouseFrame = CreateFrame("Frame", "AuctionHouseFrame")
+	_FIRE("AUCTION_HOUSE_SHOW")
+	local b = KaboboAuctionsCraftsButton
+	truthy(b, "button made")
+	b.scripts.OnClick(b, "LeftButton")
+	truthy(KaboboAuctionsCraftsFrame:IsShown(), "crafts window open")
+	b.scripts.OnClick(b, "LeftButton")
+	eq(KaboboAuctionsCraftsFrame:IsShown(), false, "and closed again")
+	_FIRE("AUCTION_HOUSE_CLOSED")
+end)
+
 test("ledger toggles closed", function()
 	SlashCmdList.KABOBOAUCTIONS("")
 	eq(KaboboAuctionsFrame:IsShown(), false)

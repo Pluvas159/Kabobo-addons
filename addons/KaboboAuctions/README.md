@@ -56,7 +56,7 @@ Data is kept per realm (ruleset) and faction in the `KaboboAuctionsDB` saved var
 
 **Crafts ranked by profit**
 - **Crafts window** (`/ka crafts`, the "Crafts by profit" button in the ledger, or "Profit
-  ranking" under the profession window): every recipe this character has learned, one tab per
+  ranking" under the auction house or the profession window): every recipe this character has learned, one tab per
   profession. Columns: mats cost, what the items sell for after the 5% AH cut and the deposit, the
   profit, **Sold/day**, **You sold** (30 days) and how many are listed on the AH.
 - **Sort** button: by profit per craft, or by **profit per day** (profit x Sold/day), so a big
@@ -167,7 +167,7 @@ sends an addon message (`PricesChanged`, `VendorPricesChanged`, `ScanStateChange
 | `AuctionLabels.lua` | Undercut status beside your auctions in the Auctions tab |
 | `Shopping.lua` | Shopping list for a recipe: what to buy and craft, advice under the price cap, counting |
 | `ShopWindow.lua` | The shopping list window: its steps, totals, and Find/Craft and Skip buttons |
-| `ScanButton.lua` | The full scan button on the auction house frame |
+| `ScanButton.lua` | The Full scan and Profit ranking buttons under the auction house frame |
 
 ## Known limits
 
