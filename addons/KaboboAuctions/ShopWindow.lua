@@ -29,7 +29,7 @@ local CRAFT_HEADER = { header = true }
 
 local function updateRow(row, m)
 	if m.header then
-		PUI.SetColumns(row, head("Craft"), head("Crafts"), head("Have"), head("Made"), head("Left"), "")
+		PUI.SetColumns(row, head("Craft"), head("Crafts"), head("Have"), head("Made"), head("Left"), head("Worth"))
 		return
 	end
 	local name = P.ItemName(m.id)
@@ -38,8 +38,9 @@ local function updateRow(row, m)
 		local left = SH.Remaining(m) == 0 and PUI.Color("done", "good")
 			or (SH.Skipped(m.id) and PUI.Color("skipped", "bad")) or tostring(SH.Remaining(m))
 		local makes = m.makes and m.makes > 1 and PUI.Color(" (x" .. C.FormatQty(m.makes) .. ")", "muted") or ""
+		local cost = SH.MatCost(m)
 		PUI.SetColumns(row, name .. makes, tostring(m.crafts), m.have > 0 and tostring(m.have) or "",
-			tostring(SH.Made(m.id)), left, "")
+			tostring(SH.Made(m.id)), left, cost and PUI.Money(cost) or "")
 		return
 	end
 	local left
@@ -177,8 +178,8 @@ function SW:Refresh()
 
 	local t = SH.Totals(list)
 	local unpriced = t.missing > 0 and PUI.Color(" + " .. t.missing .. " mats without a price", "muted") or ""
-	window.costLine:SetText("Total mats cost: " .. PUI.Money(t.cost) .. unpriced
-		.. PUI.Color("   still to buy: " .. PUI.Money(t.left), "muted"))
+	window.costLine:SetText("Mats worth: " .. PUI.Money(t.cost) .. unpriced
+		.. PUI.Color("  (incl. what you have)   still to buy: " .. PUI.Money(t.left), "muted"))
 	if t.net then
 		local profit = PUI.SignedMoney(t.profit)
 		if t.missing > 0 then profit = profit .. PUI.Color(" (too high: some mats unpriced)", "muted") end

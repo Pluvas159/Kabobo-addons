@@ -78,8 +78,10 @@ Data is kept per realm (ruleset) and faction in the `KaboboAuctionsDB` saved var
   Bar, Rough Grinding Stone, ...) when crafting them is cheaper than buying them, and the recipe
   itself last. Your bags are used first, for every level (3 Copper Bars in your bags mean less
   Copper Ore to buy). Mats a vendor sells cheaper are marked "vendor" and not bought on the AH.
-- Each mat shows its cost, and the totals show the mats cost, what is still to buy, what the
-  crafted items sell for after the AH cut, the profit, and how many leave the AH per day.
+- Each row shows what it is worth, crafted mats included, and the totals show what all the mats
+  are worth **including what you already have** (so the profit matches the crafts window), what
+  is still to buy, what the crafted items sell for after the AH cut, the profit, and how many
+  leave the AH per day.
 - The main button walks the steps. **Find** puts the next mat's name in the auction house search
   box: press Enter, click the item, and the list says how many to buy and what that costs. You buy
   with the auction house's own **Buy Now**: on this client only Blizzard's buttons may buy, so no

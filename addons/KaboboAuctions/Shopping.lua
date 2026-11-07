@@ -465,34 +465,41 @@ function SH:ButtonText()
 	return "Find " .. P.ItemName(m.id)
 end
 
--- What one mat of the list costs: `need` x its price per unit (vendor or AH, the cheaper), or
--- nil when it has no price.
-function SH.MatCost(m, priceOf)
-	local unit = (priceOf or C.MatPrice)(m.id)
+-- What a row of the list is worth: `need` x its price per unit, or nil without a price. A buy
+-- row uses its price (vendor or AH, the cheaper); a craft row what crafting one costs (from its
+-- own mats, see Crafting.UnitCost), so mats you already have still count. The recipe itself
+-- (need 0) has none.
+function SH.MatCost(m, priceOf, recipeOf)
+	priceOf = priceOf or C.MatPrice
+	if m.kind == "craft" then
+		if not m.need or m.need == 0 then return nil end
+		local unit = C.UnitCost(m.id, priceOf, recipeOf or C.RecipeOf)
+		return unit and math.floor(m.need * unit + 0.5) or nil
+	end
+	local unit = priceOf(m.id)
 	return unit and m.need * unit or nil
 end
 
 -- Totals for the list: { cost, left, missing, net, profit }.
---   cost    every mat at its price (unpriced mats left out, counted in missing)
+--   cost    what all the mats of the crafts are worth, including what you already have (the
+--           same mats cost as the crafts window, times the crafts), nil when nothing is priced
+--   missing mats without a price (left out of cost)
 --   left    what the mats still to buy cost (vendor mats included)
 --   net     what the crafted items sell for after the AH cut and deposit, nil without a price
---   profit  net - cost, nil without a price for the crafted item
-function SH.Totals(list, priceOf, outputPrice)
+--   profit  net - cost, nil without a price for the crafted item or its mats
+function SH.Totals(list, priceOf, outputPrice, recipeOf)
 	priceOf = priceOf or C.MatPrice
-	local t = { cost = 0, left = 0, missing = 0 }
+	local t = { left = 0 }
 	for _, m in ipairs(list.mats) do
 		local unit = priceOf(m.id)
-		if unit then
-			t.cost = t.cost + m.need * unit
-			t.left = t.left + SH.Remaining(m) * unit
-		else
-			t.missing = t.missing + 1
-		end
+		if unit then t.left = t.left + SH.Remaining(m) * unit end
 	end
-	local s = C.CraftSummary(list.recipe, priceOf, C.RecipeOf, (outputPrice or C.AHPrice)(list.output))
+	local s = C.CraftSummary(list.recipe, priceOf, recipeOf or C.RecipeOf, (outputPrice or C.AHPrice)(list.output))
+	t.cost = s.cost and s.cost * list.crafts or nil
+	t.missing = s.missing or 0
 	if s.net then
 		t.net = s.net * list.crafts
-		t.profit = t.net - t.cost
+		if t.cost then t.profit = t.net - t.cost end
 	end
 	return t
 end

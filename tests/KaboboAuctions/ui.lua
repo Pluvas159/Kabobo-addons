@@ -110,6 +110,20 @@ test("shopping list shows the crafts to do under the mats", function()
 	truthy(items[2].header, "craft section")
 	eq(items[3].id, 2996); eq(items[3].crafts, 3)
 	eq(items[4].id, 4238); eq(items[4].crafts, 1)
+
+	-- mats you already have still count in the cost and profit
+	local items2 = ns.db.realms[ns.realmKey].items
+	items2["2589"] = { m = 100, t = time() }
+	items2["4238"] = { m = 2000, t = time() }
+	local list = ns.Shopping.list
+	list.mats[1].have = 6   -- all the cloth in the bags
+	local t = ns.Shopping.Totals(list)
+	eq(t.cost, 600, "6 cloth, even though you have them")
+	eq(t.left, 0)
+	eq(t.profit, 2000 - 100 - 100 - 600)
+	eq(ns.Shopping.MatCost(items[3]), 600, "3 bolts worth their cloth")
+	eq(ns.Shopping.MatCost(items[4]), nil)
+	items2["2589"], items2["4238"] = nil, nil
 	w:Close("user")
 	me[197] = nil
 end)
