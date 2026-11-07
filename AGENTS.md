@@ -83,6 +83,7 @@ npm install                      # once: dev dependencies for tests
 npm test                         # syntax-check + test every addon
 npm test -- PluvasAuctions       # one addon (or library: npm test -- PluvasUI)
 npm run sync                     # after editing shared/: refresh every embedded copy
+npm run package                  # release zips into dist/ (see Releasing)
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1          # symlink every addon into WoW
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1 -Status  # show what is installed
 powershell -ExecutionPolicy Bypass -File scripts/new-addon.ps1 -Name PluvasThing -Title "Pluvas' Thing"
@@ -184,9 +185,12 @@ Run `npm test` before you report work as done. If you could not verify something
 
 ## Releasing an addon
 
-- Bump `## Version` in the addon's TOC and note the change in its README.
-- To publish, zip the `addons/<Name>` folder so the zip contains `<Name>/` at its root.
-  Upload it to CurseForge or Wago with the game version set to WoW: Forever.
+- Bump `## Version` in the addon's TOC and note the change in its README. Commit.
+- `npm run package` builds the zips into `dist/` from the last commit: one
+  `<Name>-<version>.zip` per addon (with `<Name>/` at its root) and `pluvas-addons-<release>.zip`
+  with every addon.
+- Publish them as a GitHub release (`gh release create v<release> dist/*.zip`), and/or upload
+  an addon's zip to CurseForge or Wago with the game version set to WoW: Forever.
 
 ## Git
 

@@ -9,7 +9,15 @@ World of Warcraft addons for **World of Warcraft: Forever**, kept together in on
 | [Pluvas' Auctions](addons/PluvasAuctions) | Auction house price scanning, price history in tooltips, and a sales, profit and gold ledger |
 | [Pluvas' Professions](addons/PluvasProfessions) | Lists the recipes you have not learned yet and where to learn them (trainer, vendor, drop, quest) |
 
-## Install into the game
+## Download
+
+Get the latest zip from [Releases](https://github.com/Pluvas159/pluvas-addons/releases):
+`pluvas-addons-<version>.zip` has every addon, or pick a single `<Name>-<version>.zip`. Extract it
+into `World of Warcraft\_forever_\Interface\AddOns`, so that you end up with
+`Interface\AddOns\PluvasAuctions\PluvasAuctions.toc` (not a folder inside a folder), then restart
+the game.
+
+## Install from this repo (development)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1

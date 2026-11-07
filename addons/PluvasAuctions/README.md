@@ -84,22 +84,8 @@ sends an addon message (`PricesChanged`, `VendorPricesChanged`, `ScanStateChange
 
 ## Changelog
 
-- **Unreleased**: rebuilt on the shared PluvasCore runtime.
-  - New slash toggles for every tooltip and panel setting (`/pa history`, `sold`, `craft`, `mats`,
-    `panel`).
-  - Tooltips no longer scan the whole sales history on every hover.
-  - Reading new auction mail no longer compares it with every past transaction.
-  - A profession window closed mid-read no longer keeps being read.
-  - Errors in the mail capture hooks are contained.
-  - The tooltip and the profession panel now share their lines, so they always match.
-  - Vendor prices: mats are priced at the cheaper of AH and vendor, learned from the vendor
-    windows you open. The mats list marks vendor-priced mats, and tooltips show the vendor
-    price. "Mats cost (AH)" is now "Mats cost".
-- **0.1.1**: tooltip prices use gold, silver and copper coin icons. Tooltips show the stack's
-  total market value and the amount left after the AH cut and deposit. Tooltips show the AH cost of
-  mats for items you can craft, pricing craftable mats from their own mats. The profession
-  window shows mats cost, sale value and profit for the selected recipe. Both list the base
-  mats. The deposit is a flat 1 silver per auction. Repeated errors turn the failing feature off instead of
-  spamming errors.
-- **0.1.0**: first version. Full scan, passive capture, price history and tooltips, mail ledger,
-  gold tracking.
+- **0.1.0**: first public release. Full and passive AH scans with price history; tooltips with
+  market value, lowest price, 14-day average, stack value and what is left after the AH cut and
+  deposit; mats cost for items you can craft, priced at the cheaper of AH and vendor and broken
+  down to base mats; mats cost, sale value and profit in the profession window; a ledger of sales,
+  purchases, profit and gold across your characters, read from auction mail.

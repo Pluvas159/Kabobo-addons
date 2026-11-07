@@ -70,6 +70,4 @@ The readers send `RecipesChanged` after each change, and the panel redraws. The 
 
 ## Changelog
 
-- **Unreleased**: rebuilt on the shared PluvasCore runtime. Prices in the list group thousands of
-  gold (`1,200g`), like Pluvas' Auctions.
-- **0.1.0**: first version.
+- **0.1.0**: first public release.

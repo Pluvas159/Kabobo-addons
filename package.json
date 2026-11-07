@@ -5,7 +5,8 @@
   "scripts": {
     "test": "node tests/run.js",
     "install-addons": "powershell -ExecutionPolicy Bypass -File scripts/install.ps1",
-    "sync": "node scripts/sync-shared.js"
+    "sync": "node scripts/sync-shared.js",
+    "package": "node scripts/package.js"
   },
   "devDependencies": {
     "fengari": "^0.1.4",
