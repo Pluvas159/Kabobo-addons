@@ -1,5 +1,8 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/">
 	<!-- PluvasUI: load order. Edit in shared/PluvasUI, then run npm run sync. -->
 	<Script file="Style.lua"/>
+	<Script file="Format.lua"/>
 	<Script file="Widgets.lua"/>
+	<Script file="List.lua"/>
+	<Script file="Window.lua"/>
 </Ui>

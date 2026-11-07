@@ -7,13 +7,15 @@
 ## IconTexture: Interface\Icons\INV_Misc_Coin_02
 ## SavedVariables: PluvasAuctionsDB
 
+Libs\PluvasCore\PluvasCore.xml
 Libs\PluvasUI\PluvasUI.xml
 Core.lua
-Util.lua
 Pricing.lua
 Scanner.lua
 Ledger.lua
 Crafting.lua
+Lines.lua
 Tooltip.lua
-ProfessionsUI.lua
-UI.lua
+CraftPanel.lua
+LedgerWindow.lua
+ScanButton.lua

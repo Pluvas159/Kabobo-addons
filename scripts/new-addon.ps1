@@ -41,52 +41,27 @@ Core.lua
 "@
 
 Write-File (Join-Path $addonDir 'Core.lua') @"
--- ${Title}: bootstrap, saved variables and events.
-local ADDON, ns = ...
+-- ${Title}: saved variables and slash commands.
+--
+-- The runtime (events, addon messages, modules, error guards, identity) comes from
+-- Libs/PluvasCore, the look from Libs/PluvasUI. Put features in their own files, each a module:
+--   local M = ns:NewModule("Thing")   function M:OnLogin() end
+--
+-- Addon messages: (list the ones this addon sends here)
+local _, ns = ...
 
-local DEFAULTS = {
-	settings = {},
-}
+ns:Setup({
+	title = "$Title",
+	savedVariables = "${Name}DB",
+	dbVersion = 1,
+	defaults = {
+		settings = {},
+	},
+})
 
-local frame = CreateFrame("Frame")
-local handlers = {}
-
-function ns:On(event, fn)
-	if not handlers[event] then
-		handlers[event] = {}
-		pcall(frame.RegisterEvent, frame, event)
-	end
-	table.insert(handlers[event], fn)
-end
-
-frame:SetScript("OnEvent", function(_, event, ...)
-	for _, fn in ipairs(handlers[event] or {}) do
-		local ok, err = pcall(fn, ...)
-		if not ok then geterrorhandler()(err) end
-	end
-end)
-
-function ns:Print(...)
-	print(ns.PluvasUI.Prefix("$Title"), ...)
-end
-
-local function applyDefaults(target, defaults)
-	for k, v in pairs(defaults) do
-		if type(v) == "table" then
-			if type(target[k]) ~= "table" then target[k] = {} end
-			applyDefaults(target[k], v)
-		elseif target[k] == nil then
-			target[k] = v
-		end
-	end
-end
-
-ns:On("ADDON_LOADED", function(name)
-	if name ~= ADDON then return end
-	${Name}DB = ${Name}DB or {}
-	applyDefaults(${Name}DB, DEFAULTS)
-	ns.db = ${Name}DB
-end)
+ns:Slash({ "/$($Name.ToLower())" }, {
+	{ cmd = "", help = "say hello", run = function() ns:Print("hello, " .. tostring(ns.charName)) end },
+})
 "@
 
 Write-File (Join-Path $testDir 'tests.lua') @"
@@ -99,14 +74,15 @@ _FIRE("PLAYER_LOGIN")
 test("saved variables are created", function()
 	truthy(ns.db, "ns.db")
 	truthy(${Name}DB, "${Name}DB")
+	eq(${Name}DB.dbVersion, 1)
 end)
 "@
 
-# Embed the shared UI library and load it first from the TOC.
+# Embed every shared library (PluvasCore, PluvasUI) and load them first from the TOC.
 & node (Join-Path $repo 'scripts\sync-shared.js') --embed $Name
-if ($LASTEXITCODE -ne 0) { throw "Could not embed PluvasUI (is Node installed?)." }
+if ($LASTEXITCODE -ne 0) { throw "Could not embed the shared libraries (is Node installed?)." }
 
 Write-Host "Created addons\$Name and tests\$Name."
 Write-Host "Next: npm test -- $Name, then .\scripts\install.ps1 (symlinks it into WoW; restart the game)."
 Write-Host "Add the addon to the tables in README.md and AGENTS.md."
-Write-Host "Build its UI with ns.PluvasUI: see shared\PluvasUI\README.md."
+Write-Host "Runtime: shared\PluvasCore\README.md. UI: shared\PluvasUI\README.md."

@@ -5,7 +5,8 @@
 //
 // For each addon in addons/<Name>/<Name>.toc:
 //   0. the TOC is checked for the shared metadata (Category "Pluvas' addons", Interface 16001, ...)
-//   1. embedded shared libraries (addons/<Name>/Libs/<Lib>) must match shared/<Lib> exactly
+//   1. every shared library is embedded (addons/<Name>/Libs/<Lib>), matches shared/<Lib>
+//      exactly and is loaded by the TOC
 //   2. every .lua file the TOC loads (directly or through an .xml include) is syntax-checked as
 //      Lua 5.1 (the game's dialect)
 //   3. a fresh Lua VM (fengari) loads tests/lib/mocks.lua and tests/lib/harness.lua, then the
@@ -94,12 +95,17 @@ function shippedFiles(dir) {
   return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => SHIPPED.test(f)).sort() : [];
 }
 
-// An embedded copy must be byte-identical to shared/<Lib>, and the TOC must load it.
+// Every addon embeds every shared library: the copy must be byte-identical to shared/<Lib>,
+// and the TOC must load it.
 function libCheck(addon, entries) {
   let ok = true;
   for (const lib of sharedLibs) {
     const copyDir = path.join(addonsDir, addon, "Libs", lib);
-    if (!fs.existsSync(copyDir)) continue;
+    if (!fs.existsSync(copyDir)) {
+      ok = false;
+      console.error(`  ${addon} must embed shared/${lib}. Run: node scripts/sync-shared.js --embed ${addon} ${lib}`);
+      continue;
+    }
     const want = shippedFiles(path.join(sharedDir, lib));
     const have = shippedFiles(copyDir);
     const stale = want.filter(

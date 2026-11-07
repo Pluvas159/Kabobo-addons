@@ -7,10 +7,12 @@
 ## IconTexture: Interface\Icons\INV_Misc_Note_01
 ## SavedVariables: PluvasProfessionsDB
 
+Libs\PluvasCore\PluvasCore.xml
 Libs\PluvasUI\PluvasUI.xml
 Core.lua
 Data.lua
+Rows.lua
+Recipes.lua
 Trainer.lua
 Vendor.lua
-Recipes.lua
-UI.lua
+Panel.lua

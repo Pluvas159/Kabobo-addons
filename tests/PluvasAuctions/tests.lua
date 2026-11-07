@@ -2,6 +2,7 @@
 -- test/eq/near come from tests/lib/harness.lua; WoW stand-ins from tests/lib/mocks.lua.
 local ns = _NS
 local P, L = ns.Pricing, ns.Ledger
+local PUI = ns.PluvasUI
 
 -- Boot the addon like the client does.
 _FIRE("ADDON_LOADED", "PluvasAuctions")
@@ -142,9 +143,22 @@ test("top items sorted by net", function()
 	eq(top[2].item, "Linen Cloth")
 end)
 
-test("average sale per unit", function()
-	local avg, qty = L.AverageSale({ sale(1, 1000), sale(2, 3000) }, "Linen Cloth")
-	eq(avg, 100); eq(qty, 40)
+test("sales per item", function()
+	local by = L.SalesByItem({ sale(1, 1000), sale(2, 3000), { k = "b", item = "Linen Cloth", qty = 5, gross = 99, t = 3 } })
+	eq(by["Linen Cloth"].total, 4000); eq(by["Linen Cloth"].qty, 40)
+end)
+
+test("merge keeps the list sorted by time", function()
+	local list = {}
+	L.Merge(list, { sale(5000), sale(1000, 7), sale(3000, 9) })
+	eq(list[1].t, 1000); eq(list[2].t, 3000); eq(list[3].t, 5000)
+end)
+
+test("merge only compares entries near the incoming mail", function()
+	-- An identical sale far in the past is never compared, so it cannot swallow a new one.
+	local list = { sale(0) }
+	eq(L.Merge(list, { sale(100000) }), 1)
+	eq(#list, 2)
 end)
 
 test("inbox scan records invoices once", function()
@@ -203,7 +217,7 @@ test("full scan groups auctions per item and records market", function()
 	_FIRE("REPLICATE_ITEM_LIST_UPDATE")
 	_RUN_TIMERS()
 	eq(ns.Scanner.state, "idle")
-	local items = ns:RealmData().items
+	local items = ns.Pricing:Realm().items
 	eq(items["2589"].n, 100)
 	eq(items["2589"].q, 30)
 	eq(items["15210:1180"].m, 50000)
@@ -214,21 +228,39 @@ test("full scan groups auctions per item and records market", function()
 	assert(ns.Scanner:CooldownRemaining() > 0)
 end)
 
-test("money formatting", function()
-	eq(ns.Money(0), "0|cffeda55fc|r")
-	eq(ns.Money(123456), "12|cffffd700g|r 34|cffc7c7cfs|r 56|cffeda55fc|r")
-	eq(ns.Money(-10000), "-1|cffffd700g|r")
-	eq(ns.Money(12345670000), "1,234,567|cffffd700g|r")
+test("a full scan is discarded when the auction house closes mid-scan", function()
+	local auctions = {}
+	for i = 1, 2500 do auctions[i] = { id = 50000 + i, qty = 1, buyout = 100 } end
+	C_AuctionHouse.GetNumReplicateItems = function() return #auctions end
+	C_AuctionHouse.GetReplicateItemInfo = function(i)
+		local a = auctions[i + 1]
+		return "n", 0, a.qty, 1, true, 1, nil, 0, 0, a.buyout, 0, false, nil, "o", nil, 0, a.id, true
+	end
+	C_AuctionHouse.GetReplicateItemLink = function(i) return "|Hitem:" .. auctions[i + 1].id .. "::::::::60|h[x]|h" end
+	ns.db.account.lastReplicate = 0
+	local reads = 0
+	local info = C_AuctionHouse.GetReplicateItemInfo
+	C_AuctionHouse.GetReplicateItemInfo = function(i)
+		reads = reads + 1
+		if reads == 10 then _FIRE("AUCTION_HOUSE_CLOSED") end
+		return info(i)
+	end
+	ns.Scanner:FullScan()
+	_FIRE("REPLICATE_ITEM_LIST_UPDATE")
+	_RUN_TIMERS()
+	eq(ns.Scanner.state, "idle")
+	eq(reads, ns.Scanner.CHUNK, "stops after the batch that was running")
+	eq(P:Get("50001"), nil, "nothing saved")
 end)
 
-test("money formatting with coin icons", function()
-	local G = "|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t"
-	local S = "|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t"
-	local C = "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t"
-	eq(ns.MoneyIcons(0), "0" .. C)
-	eq(ns.MoneyIcons(123456), "12" .. G .. " 34" .. S .. " 56" .. C)
-	eq(ns.MoneyIcons(-10000), "-1" .. G)
-	eq(ns.MoneyIcons(nil), "|cff808080-|r")
+test("scan button text follows the scanner", function()
+	local SB = ns.ScanButton
+	eq((SB.Label("waiting", 0, 0)), "Waiting for AH...")
+	eq((SB.Label("processing", 0.5, 0)), "Scanning 50%")
+	local text, enabled = SB.Label("idle", 0, 65)
+	eq(text, "Full scan in 1:05"); eq(enabled, false)
+	text, enabled = SB.Label("idle", 0, 0)
+	eq(text, "Full scan"); eq(enabled, true)
 end)
 
 -- Selling costs
@@ -256,8 +288,8 @@ test("tooltip shows stack total and net after cut and deposit", function()
 	ns.Tooltip:AddLines(tooltip, { key = "9999", id = 9999, count = 20 })
 	local byLabel = {}
 	for _, line in ipairs(lines) do byLabel[line[1]] = line[2] end
-	eq(byLabel["AH market x20"], ns.MoneyIcons(200000))
-	eq(byLabel["After cut & deposit|cff808080 (x20)|r"], ns.MoneyIcons(200000 - 10000 - 100))
+	eq(byLabel["AH market x20"], PUI.MoneyIcons(200000))
+	eq(byLabel["After cut & deposit|cff808080 (x20)|r"], PUI.MoneyIcons(200000 - 10000 - 100))
 
 	-- A single item gets the net line but no stack total.
 	lines = {}
@@ -265,31 +297,40 @@ test("tooltip shows stack total and net after cut and deposit", function()
 	byLabel = {}
 	for _, line in ipairs(lines) do byLabel[line[1]] = line[2] end
 	eq(byLabel["AH market x1"], nil)
-	eq(byLabel["After cut & deposit"], ns.MoneyIcons(10000 - 500 - 100))
+	eq(byLabel["After cut & deposit"], PUI.MoneyIcons(10000 - 500 - 100))
 
 	items["9999"] = nil
 end)
 
--- Error containment
+test("tooltip shows your average sale, and learns of new sales", function()
+	local tx = L:Transactions()
+	local before = #tx
+	L.Merge(tx, { { k = "s", item = "Silk Cloth", qty = 10, gross = 2000, cut = 100, who = "Zed", t = time() } })
+	local function soldLine()
+		local lines = {}
+		local tooltip = { AddDoubleLine = function(_, l, r) lines[l] = r end }
+		ns.Tooltip:AddLines(tooltip, { key = "4306", id = 4306, name = "Silk Cloth", count = 1 })
+		return lines["You sold at"]
+	end
+	eq(soldLine(), PUI.MoneyIcons(200) .. "|cff808080 (10 sold)|r")
+	-- A new sale arrives by mail: the cached average must not go stale.
+	GetInboxNumItems = function() return 1 end
+	GetInboxHeaderInfo = function() return nil, nil, "x", "subj", 0, 0, 30 end
+	GetInboxInvoiceInfo = function() return "seller", "Silk Cloth", "Amy", 6000, 0, 0, 300, 0, 0, 0, 10 end
+	_FIRE("MAIL_INBOX_UPDATE")
+	eq(soldLine(), PUI.MoneyIcons(400) .. "|cff808080 (20 sold)|r")
+	for i = #tx, before + 1, -1 do table.remove(tx, i) end
+	GetInboxNumItems = function() return 0 end
+end)
 
-test("guard reports errors and turns the code off after three", function()
-	local reported, calls = {}, 0
-	local oldHandler = geterrorhandler
-	geterrorhandler = function() return function(err) reported[#reported + 1] = err end end
-	local f = ns:Guard("Test feature", function(x)
-		calls = calls + 1
-		if x == "boom" then error("bad") end
-		return x * 2
-	end)
-	eq(f(21), 42)
-	f("boom"); f("boom"); f("boom")
-	eq(#reported, 3)
-	truthy(reported[1]:find("Test feature: ", 1, true), "error names the feature")
-	eq(ns.disabled["Test feature"], true)
-	eq(f(1), nil)          -- turned off: not even called
-	eq(calls, 4)
-	geterrorhandler = oldHandler
-	ns.disabled["Test feature"] = nil
+test("slash toggles flip tooltip settings and announce it", function()
+	local seen
+	ns:On("SettingChanged", function(key, value) seen = key .. "=" .. tostring(value) end)
+	SlashCmdList.PLUVASAUCTIONS("history")
+	eq(ns.db.settings.tooltipHistory, false)
+	eq(seen, "tooltipHistory=false")
+	SlashCmdList.PLUVASAUCTIONS("history")
+	eq(ns.db.settings.tooltipHistory, true)
 end)
 
 -- Crafting
@@ -357,9 +398,9 @@ test("profession scan stores learned recipes and the tooltip shows mats cost", f
 	ns.Tooltip:AddLines(tooltip, { key = "2996", id = 2996, count = 3 })
 	local byLabel = {}
 	for _, line in ipairs(lines) do byLabel[line[1]] = line[2] end
-	eq(byLabel["Mats cost (AH)|cff808080 (x3)|r"], ns.MoneyIcons(750))
-	eq(byLabel["   6x item:2589"], ns.MoneyIcons(600))
-	eq(byLabel["   3x item:2320"], ns.MoneyIcons(150))
+	eq(byLabel["Mats cost (AH)|cff808080 (x3)|r"], PUI.MoneyIcons(750))
+	eq(byLabel["   6x item:2589"], PUI.MoneyIcons(600))
+	eq(byLabel["   3x item:2320"], PUI.MoneyIcons(150))
 
 	-- a broken client function must not stop the addon: the scan reports and keeps old data
 	local oldHandler = geterrorhandler
@@ -423,21 +464,21 @@ test("mats cost recurses into mats the character can craft", function()
 end)
 
 test("profession panel lines", function()
-	local PU = ns.ProfessionsUI
-	local lines = PU.BuildLines({ cost = 650, missing = 0, yield = 1, value = 1000, net = 935, profit = 285 })
+	local Lines = ns.Lines
+	local lines = Lines.Craft({ cost = 650, missing = 0, yield = 1, value = 1000, net = 935, profit = 285 })
 	eq(#lines, 4)
 	eq(lines[1][1], "Mats cost (AH)")
-	eq(lines[1][2], ns.MoneyIcons(650))
-	eq(lines[2][2], ns.MoneyIcons(1000))
-	eq(lines[3][2], ns.MoneyIcons(935))
-	eq(lines[4][2], "|cff40d040+|r" .. ns.MoneyIcons(285))
+	eq(lines[1][2], PUI.MoneyIcons(650))
+	eq(lines[2][2], PUI.MoneyIcons(1000))
+	eq(lines[3][2], PUI.MoneyIcons(935))
+	eq(lines[4][2], "|cff40d040+|r" .. PUI.MoneyIcons(285))
 
-	lines = PU.BuildLines({ cost = 2000, missing = 1, yield = 2, value = 1000, net = 935, profit = -1065 })
+	lines = Lines.Craft({ cost = 2000, missing = 1, yield = 2, value = 1000, net = 935, profit = -1065 })
 	eq(lines[1][1], "Mats cost (AH)|cff808080 (per craft, makes 2)|r")
-	eq(lines[1][2], ns.MoneyIcons(2000) .. "|cff808080 (1 mats unpriced)|r")
-	eq(lines[4][2], "|cffff5050-|r" .. ns.MoneyIcons(1065))
+	eq(lines[1][2], PUI.MoneyIcons(2000) .. "|cff808080 (1 mats unpriced)|r")
+	eq(lines[4][2], "|cffff5050-|r" .. PUI.MoneyIcons(1065))
 
-	lines = PU.BuildLines({ missing = 2, yield = 1 })
+	lines = Lines.Craft({ missing = 2, yield = 1 })
 	eq(#lines, 2)
 	eq(lines[1][2], "|cff808080no AH prices for mats|r")
 	eq(lines[2][2], "|cff808080no AH price yet|r")
@@ -481,15 +522,42 @@ test("mats list shows the base mats behind the cost", function()
 end)
 
 test("profession panel lists mats", function()
-	local PU = ns.ProfessionsUI
+	local Lines = ns.Lines
 	local summary = { cost = 650, missing = 0, yield = 1, mats = {
 		{ id = 2589, qty = 6, unit = 100, cost = 600 },
 		{ id = 2320, qty = 1, unit = 50, cost = 50 },
 	} }
-	local lines = PU.BuildLines(summary, true)
+	local lines = Lines.Craft(summary, true)
 	eq(lines[2][1], "   6x item:2589")      -- item not in the (mock) cache: falls back to item:<id>
-	eq(lines[2][2], ns.MoneyIcons(600))
-	eq(lines[2].sub, true)
-	eq(lines[3][2], ns.MoneyIcons(50))
-	eq(#PU.BuildLines(summary, false), #lines - 2)
+	eq(lines[2][2], PUI.MoneyIcons(600))
+	eq(lines[2].color, "soft")
+	eq(lines[3][2], PUI.MoneyIcons(50))
+	eq(#Lines.Craft(summary, false), #lines - 2)
+end)
+
+test("long mat lists end in a '+N more' line", function()
+	local mats = {}
+	for i = 1, 13 do mats[i] = { id = i, qty = 1 } end
+	local out = ns.Lines.AddMats({}, mats, 10)
+	eq(#out, 11)
+	eq(out[11][1], "   +3 more")
+	eq(out[11].color, "muted")
+end)
+
+test("a crafting scan spread over frames stops when the window closes", function()
+	local ids, reads = {}, 0
+	for i = 1, 100 do ids[i] = i end
+	C_TradeSkillUI = {
+		GetBaseProfessionInfo = function() return { professionID = 197, professionName = "Tailoring" } end,
+		GetAllRecipeIDs = function() return ids end,
+		GetRecipeInfo = function()
+			reads = reads + 1
+			if reads == 5 then _FIRE("TRADE_SKILL_CLOSE") end
+			return { learned = false }
+		end,
+	}
+	_FIRE("TRADE_SKILL_SHOW")
+	_RUN_TIMERS()
+	eq(reads, 40, "only the batch already running finishes")
+	C_TradeSkillUI = nil
 end)

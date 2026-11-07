@@ -17,6 +17,77 @@ test("chat prefix uses the accent color", function()
 	eq(UI.Prefix("Pluvas' Thing"), "|cff22b8cfPluvas' Thing|r:")
 end)
 
+-- Format
+
+test("money with colored letters", function()
+	eq(UI.Money(0), "0|cffeda55fc|r")
+	eq(UI.Money(123456), "12|cffffd700g|r 34|cffc7c7cfs|r 56|cffeda55fc|r")
+	eq(UI.Money(5000), "50|cffc7c7cfs|r")
+	eq(UI.Money(-10000), "-1|cffffd700g|r")
+	eq(UI.Money(12345670000), "1,234,567|cffffd700g|r")
+	eq(UI.Money(nil), "|cff808080-|r")
+end)
+
+test("money with coin icons", function()
+	local G = "|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t"
+	local S = "|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t"
+	local C = "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t"
+	eq(UI.MoneyIcons(0), "0" .. C)
+	eq(UI.MoneyIcons(123456), "12" .. G .. " 34" .. S .. " 56" .. C)
+	eq(UI.MoneyIcons(-10000), "-1" .. G)
+end)
+
+test("signed money marks gains and losses", function()
+	eq(UI.SignedMoney(100), "|cff40d040+|r" .. UI.Money(100))
+	eq(UI.SignedMoney(-100), "|cffff5050-|r" .. UI.Money(100))
+	eq(UI.SignedMoney(0), UI.Money(0))
+	eq(UI.SignedMoney(100, true), "|cff40d040+|r" .. UI.MoneyIcons(100))
+end)
+
+test("age and clock", function()
+	eq(UI.Age(45), "45s"); eq(UI.Age(720), "12m"); eq(UI.Age(3 * 3600), "3h"); eq(UI.Age(5 * 86400), "5d")
+	eq(UI.Age(nil), "?")
+	eq(UI.Clock(65), "1:05"); eq(UI.Clock(-3), "0:00")
+end)
+
+-- Label/value lines
+
+test("tooltip lines: accent labels by default, any color on request", function()
+	local got = {}
+	local tooltip = { AddDoubleLine = function(_, l, r, lr, lg, lb) got[#got + 1] = { l, r, lr, lg, lb } end }
+	UI.AddTooltipLines(tooltip, { { "Price", "5s" }, { "  detail", nil, color = "soft" } })
+	eq(got[1][1], "Price"); eq(got[1][2], "5s")
+	near(got[1][3], 0x22 / 255)
+	eq(got[2][2], " ", "an empty value still makes a double line")
+	near(got[2][3], 0xd9 / 255)
+end)
+
+test("a line panel shows its lines, sizes to them, and hides leftovers", function()
+	local panel = UI.LinePanel(UIParent, { lineHeight = 10 })
+	eq(panel:IsShown(), false, "starts hidden")
+	panel:SetLines({ { "A", "1" }, { "B", "2", color = "muted" }, { "C", "3" } })
+	eq(panel:GetHeight(), 30)
+	eq(panel.labels[1]:GetText(), "|cff22b8cfA|r")
+	eq(panel.labels[2]:GetText(), "|cff808080B|r")
+	eq(panel.values[3]:GetText(), "3")
+	panel:SetLines({ { "Only", "x" } })
+	eq(panel:GetHeight(), 10)
+	eq(panel.labels[2]:IsShown(), false)
+	eq(panel.labels[1]:IsShown(), true)
+end)
+
+-- Grid
+
+test("a grid has a cell per row and column", function()
+	local grid = UI.Grid(UIParent, { columns = { "Today", "Week" }, rows = { "Sales", "Cut", "Profit" } })
+	eq(#grid.cells, 3)
+	eq(#grid.cells[1], 2)
+	grid:Set(3, 2, "42")
+	eq(grid.cells[3][2]:GetText(), "42")
+	grid:Set(3, 2, nil)
+	eq(grid.cells[3][2]:GetText(), "")
+end)
+
 -- Window
 
 local events = {}
@@ -238,6 +309,26 @@ test("an empty list has an empty range and can show a message", function()
 	eq(first, 0); eq(last, 0); eq(total, 0)
 	list:SetEmptyText("Nothing here")
 	eq(list.empty:GetText(), "Nothing here")
+end)
+
+test("a column list can reserve a header line above its rows", function()
+	local list = UI.List(UIParent, { kind = "columns", headers = true, columns = { { width = 50 }, { width = 80 } } })
+	list:SetHeight(18 * 4)
+	eq(list.visible, 3, "the header takes one row's height")
+	list:SetHeaders("When", "Item")
+	eq(list.headers[2]:GetText(), "Item")
+	local _, _, _, _, y = list.rows[1]:GetPoint(1)
+	eq(y, -18, "rows start below the header")
+end)
+
+test("scroll to top", function()
+	local list = UI.List(UIParent, {})
+	list:SetHeight(18 * 4)
+	list:SetItems(items(10))
+	list:Scroll(5)
+	list:ScrollToTop()
+	eq(list.offset, 0)
+	eq(list.rows[1].text:GetText(), "Item 1")
 end)
 
 test("column rows take one value per column", function()

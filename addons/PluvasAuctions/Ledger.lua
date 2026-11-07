@@ -1,10 +1,10 @@
 -- Pluvas' Auctions: sales, purchases and gold tracking.
 --
--- Sales and purchases are read from auction house invoice mail ("Auction successful",
--- "Auction won"), whenever the mailbox is open. The same mail is seen many times, so each
--- mail is matched against what is already recorded before it is added.
+-- Sales and purchases are read from auction house invoice mail ("Auction successful", "Auction
+-- won") whenever the mailbox is open. The same mail is seen many times, so each mail is matched
+-- against what is already recorded before it is added. Sends LedgerChanged after each change.
 --
--- Transaction layout:
+-- Transaction layout (db.ledger[realmKey].tx, sorted by t):
 --   k     = "s" (sold) or "b" (bought)
 --   item  = item name (invoices carry no link)
 --   qty   = stack size
@@ -20,7 +20,7 @@ local DAY = 86400
 L.MAIL_DAYS = 30          -- auction house mail is kept this many days
 L.MATCH_WINDOW = 3600     -- seconds two copies of the same mail may differ by
 
--- Matching (pure, unit tested) --------------------------------------------
+-- Pure logic (unit tested) ------------------------------------------------
 
 local function sameTx(a, b, window)
 	return a.k == b.k
@@ -31,16 +31,27 @@ local function sameTx(a, b, window)
 		and math.abs(a.t - b.t) <= window
 end
 
--- Adds every transaction in `incoming` that is not already in `list`.
--- Each existing entry can match only one incoming entry, so two identical sales
--- (same buyer, item, price and time) are both kept.
+local function byTime(a, b) return a.t < b.t end
+
+-- Adds every transaction in `incoming` that is not already in `list` (sorted by t, and kept
+-- sorted). Each existing entry can match only one incoming entry, so two identical sales (same
+-- buyer, item, price and time) are both kept. Only entries near the incoming times are
+-- compared, so the cost does not grow with the length of the history.
 function L.Merge(list, incoming, window)
 	window = window or L.MATCH_WINDOW
-	local used, added = {}, 0
+	if #incoming == 0 then return 0 end
+	local oldest = math.huge
+	for _, rec in ipairs(incoming) do
+		if rec.t < oldest then oldest = rec.t end
+	end
+	oldest = oldest - window
+
+	local n, used, added = #list, {}, 0
 	for _, rec in ipairs(incoming) do
 		local found = false
-		for i = #list, 1, -1 do
+		for i = n, 1, -1 do
 			local e = list[i]
+			if e.t < oldest then break end
 			if not used[e] and sameTx(e, rec, window) then
 				used[e] = true
 				found = true
@@ -49,10 +60,10 @@ function L.Merge(list, incoming, window)
 		end
 		if not found then
 			list[#list + 1] = rec
-			used[rec] = true
 			added = added + 1
 		end
 	end
+	if added > 0 then table.sort(list, byTime) end
 	return added
 end
 
@@ -108,29 +119,56 @@ function L.TopItems(list, since)
 	return out
 end
 
--- Average price per unit you sold an item for (before the AH cut).
-function L.AverageSale(list, itemName)
-	local total, qty = 0, 0
+-- Sales per item name: { [name] = { total = copper before the cut, qty = units } }.
+function L.SalesByItem(list)
+	local out = {}
 	for _, e in ipairs(list) do
-		if e.k == "s" and e.item == itemName then
-			total = total + e.gross
-			qty = qty + e.qty
+		if e.k == "s" then
+			local s = out[e.item]
+			if not s then
+				s = { total = 0, qty = 0 }
+				out[e.item] = s
+			end
+			s.total = s.total + e.gross
+			s.qty = s.qty + e.qty
 		end
 	end
-	if qty == 0 then return nil end
-	return math.floor(total / qty + 0.5), qty
+	return out
+end
+
+-- Saved data --------------------------------------------------------------
+
+function L:Transactions()
+	local realm = ns.Ensure(ns.db.ledger, ns.realmKey)
+	realm.tx = realm.tx or {}
+	return realm.tx
+end
+
+-- Tooltips ask for the average sale price on every hover, so it comes from an index that is
+-- built once and dropped whenever the ledger changes.
+local salesIndex
+
+local function changed(txChanged)
+	if txChanged then salesIndex = nil end
+	ns:Send("LedgerChanged")
+end
+
+-- Average price per unit you sold an item for (before the AH cut), and the units sold.
+function L:AverageSale(itemName)
+	if not itemName or not ns.realmKey then return nil end
+	salesIndex = salesIndex or L.SalesByItem(L:Transactions())
+	local s = salesIndex[itemName]
+	if not s or s.qty == 0 then return nil end
+	return math.floor(s.total / s.qty + 0.5), s.qty
+end
+
+function L:Reset()
+	ns.db.ledger[ns.realmKey] = nil
+	ns:Print("ledger for " .. ns.realmKey .. " deleted.")
+	changed(true)
 end
 
 -- Mail reading ------------------------------------------------------------
-
-function L:Transactions()
-	local realm = ns.db.ledger[ns.realmKey]
-	if not realm then
-		realm = { tx = {} }
-		ns.db.ledger[ns.realmKey] = realm
-	end
-	return realm.tx
-end
 
 local function readInvoice(index, now)
 	local _, _, _, _, _, _, daysLeft = GetInboxHeaderInfo(index)
@@ -150,46 +188,38 @@ local function readInvoice(index, now)
 	}
 end
 
+local function record(incoming)
+	local added = L.Merge(L:Transactions(), incoming)
+	if added > 0 then
+		ns:Debug("ledger: " .. added .. " new auction mails recorded")
+		changed(true)
+	end
+	return added
+end
+
 function L:ScanInbox()
 	if not GetInboxInvoiceInfo then return end
-	local now = time()
-	local incoming = {}
+	local now, incoming = time(), {}
 	for i = 1, (GetInboxNumItems() or 0) do
 		local rec = readInvoice(i, now)
 		if rec then incoming[#incoming + 1] = rec end
 	end
-	if #incoming == 0 then return end
-	local list = L:Transactions()
-	local added = L.Merge(list, incoming)
-	if added > 0 then
-		table.sort(list, function(a, b) return a.t < b.t end)
-		ns:Debug("ledger: " .. added .. " new auction mails recorded")
-		if ns.UI then ns.UI:Refresh() end
-	end
+	record(incoming)
 end
 
-ns:On("MAIL_INBOX_UPDATE", function()
-	L:ScanInbox()
-end)
+ns:On("MAIL_INBOX_UPDATE", function() L:ScanInbox() end)
 
--- Catch a mail right as its money or items are taken, in case the inbox
--- was emptied before MAIL_INBOX_UPDATE had a chance to fire.
-local function captureIndex(index)
+-- Catch a mail right as its money or items are taken, in case the inbox was emptied before
+-- MAIL_INBOX_UPDATE had a chance to fire.
+local captureIndex = ns:Guard("Mail capture", function(index)
 	if not index then return end
 	local rec = readInvoice(index, time())
-	if rec then
-		local list = L:Transactions()
-		if L.Merge(list, { rec }) > 0 then
-			table.sort(list, function(a, b) return a.t < b.t end)
-		end
-	end
-end
+	if rec then record({ rec }) end
+end)
 
 function L:OnLogin()
 	for _, fname in ipairs({ "TakeInboxMoney", "AutoLootMailItem", "TakeInboxItem" }) do
-		if _G[fname] then
-			hooksecurefunc(fname, captureIndex)
-		end
+		if _G[fname] then hooksecurefunc(fname, captureIndex) end
 	end
 	L:UpdateGold()
 end
@@ -197,25 +227,15 @@ end
 -- Gold tracking -----------------------------------------------------------
 
 function L:GoldTable()
-	local realm = ns.db.gold[ns.realmKey]
-	if not realm then
-		realm = {}
-		ns.db.gold[ns.realmKey] = realm
-	end
-	return realm
+	return ns.Ensure(ns.db.gold, ns.realmKey)
 end
 
 function L:UpdateGold()
 	if not ns.realmKey then return end
-	local money = GetMoney()
-	local chars = L:GoldTable()
-	local me = chars[ns.charName]
-	if not me then
-		me = { days = {} }
-		chars[ns.charName] = me
-	end
-	me.money = money
-	me.days[ns.DayStart()] = money
+	local me = ns.Ensure(L:GoldTable(), ns.charName)
+	me.days = me.days or {}
+	me.money = GetMoney()
+	me.days[ns.DayStart()] = me.money
 	-- Keep a year of daily balances.
 	local cutoff = time() - 366 * DAY
 	for day in pairs(me.days) do
@@ -243,7 +263,7 @@ end
 
 ns:On("PLAYER_MONEY", function()
 	L:UpdateGold()
-	if ns.UI then ns.UI:Refresh() end
+	changed(false)
 end)
 
 function L:OnLogout()

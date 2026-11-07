@@ -4,8 +4,8 @@
 -- profession window is open, and floats on its own when opened with /pprof. It only reads saved
 -- data, never a game API, so it works the same with the profession window closed.
 local _, ns = ...
-local UI = ns:NewModule("UI")
-local D = ns.Data
+local Panel = ns:NewModule("Panel")
+local D, Rows = ns.Data, ns.Rows
 local PUI = ns.PluvasUI
 local S = PUI.Sizes
 
@@ -29,7 +29,7 @@ end
 
 local function buildRows(name)
 	local prof = name and D:Prof(name, false)
-	return D.BuildRows(prof, D:Catalog(name, false), {
+	return Rows.Build(prof, D:Catalog(name, false), {
 		level = playerLevel(),
 		hideUnknown = ns.db.settings.hideUnknown,
 		collapsed = ns.db.settings.collapsed,
@@ -52,14 +52,14 @@ end
 local function rightText(e)
 	local t = e.trainer
 	if e.group == "vendor" and e.vendor then
-		return e.vendor.c and D.Money(e.vendor.c) or ""
+		return e.vendor.c and PUI.Money(e.vendor.c) or ""
 	end
 	if not t or e.group ~= "trainer" then
 		return e.grey and PUI.Color(e.grey, "muted") or ""
 	end
 	local right = ""
 	if t.s then right = e.learnable and tostring(t.s) or PUI.Color(t.s, "bad") end
-	if t.c then right = right .. "  " .. D.Money(t.c) end
+	if t.c then right = right .. "  " .. PUI.Money(t.c) end
 	return right
 end
 
@@ -109,7 +109,7 @@ local function tooltipLines(e)
 			add("Requires " .. selected .. " (" .. t.s .. ")", (prof and prof.skill or 0) >= t.s and "good" or "bad")
 		end
 		if t.lv then add("Requires level " .. t.lv, playerLevel() >= t.lv and "good" or "bad") end
-		if t.c then add("Cost: " .. D.Money(t.c)) end
+		if t.c then add("Cost: " .. PUI.Money(t.c)) end
 		if e.learnable then add("You can learn this now.", "good") end
 	end
 	local v = e.vendor
@@ -117,7 +117,7 @@ local function tooltipLines(e)
 		if #lines > 0 then add(" ") end
 		add("Sold by " .. place(v), "gold")
 		if v.it then add(v.it) end
-		if v.c then add("Cost: " .. D.Money(v.c) .. (v.lim and "  (limited supply)" or "")) end
+		if v.c then add("Cost: " .. PUI.Money(v.c) .. (v.lim and "  (limited supply)" or "")) end
 	end
 	if not (e.source or t or v) then
 		add("No source known yet. Trainers and vendors you visit fill this in.", "muted")
@@ -134,7 +134,7 @@ local function rowClick(row, e)
 	if not (e.header and e.key) then return end
 	-- false, not nil, so the collapsed-by-default groups stay open after a reload.
 	ns.db.settings.collapsed[e.key] = not e.collapsed
-	UI:Refresh()
+	Panel:Refresh()
 	-- The row now holds the refreshed header; update its tooltip.
 	if row.item then rowEnter(row, row.item) end
 end
@@ -161,11 +161,11 @@ local function build()
 		-- because the profession window itself closed ("host") does not count.
 		onShow = function(w)
 			if w:IsDocked() then ns.db.settings.panel = true end
-			UI:Refresh()
+			Panel:Refresh()
 		end,
 		onHide = function(w, reason)
 			if w:IsDocked() and reason ~= "host" then ns.db.settings.panel = false end
-			UI:Refresh()
+			Panel:Refresh()
 		end,
 	})
 
@@ -174,7 +174,7 @@ local function build()
 		onSelect = function(name)
 			selected = name
 			follow = false
-			UI:Refresh()
+			Panel:Refresh()
 		end,
 	})
 	tabs:SetPoint("TOPLEFT", window, "TOPLEFT", S.pad, -S.contentTop)
@@ -194,9 +194,9 @@ local function build()
 end
 
 -- Cheap when nothing is visible: the list is only built for a panel or button that shows it.
-function UI:Refresh()
+function Panel:Refresh()
 	if not shown() then
-		UI:UpdateToggleButton()
+		Panel:UpdateToggleButton()
 		return
 	end
 
@@ -208,7 +208,7 @@ function UI:Refresh()
 	tabs:SetTabs(names, selected)
 
 	local rows, summary = buildRows(selected)
-	UI:UpdateToggleButton(selected, summary)
+	Panel:UpdateToggleButton(selected, summary)
 	local prof = selected and D:Prof(selected, false)
 	if not prof then
 		summaryText:SetText("")
@@ -251,7 +251,7 @@ local function dockOffset()
 end
 
 -- Opens the panel, docked to the profession window when that is open.
-function UI:Open()
+function Panel:Open()
 	if not window then build() end
 	local docked = ProfessionsFrame ~= nil and window:DockTo(ProfessionsFrame, { x = dockOffset(), minHeight = 300 })
 	if docked then
@@ -263,19 +263,19 @@ function UI:Open()
 		window:Float()
 	end
 	window:Show()
-	list.offset = 0
-	UI:Refresh()
+	list:ScrollToTop()
+	Panel:Refresh()
 end
 
-function UI:Toggle()
-	if shown() then window:Close("user") else UI:Open() end
+function Panel:Toggle()
+	if shown() then window:Close("user") else Panel:Open() end
 end
 
 -- Button under the profession window ----------------------------------------------
 
 -- known: rows summary of the panel's profession, reused when it is the open one, so a refresh
 -- builds the list once.
-function UI:UpdateToggleButton(knownName, knownSummary)
+function Panel:UpdateToggleButton(knownName, knownSummary)
 	-- Hidden with the profession window: nothing to update, and no list to build.
 	if not toggleButton or not toggleButton:IsVisible() then return end
 	if dockedShown() then
@@ -300,10 +300,10 @@ local function createToggleButton()
 		width = 190,
 		-- The panel's onShow/onHide remember the choice.
 		onClick = function()
-			if dockedShown() then window:Close("user") else UI:Open() end
+			if dockedShown() then window:Close("user") else Panel:Open() end
 		end,
 		tooltip = {
-			title = "Pluvas' Professions",
+			title = ns.title,
 			lines = {
 				"List the recipes you have not learned yet, and where to learn them.",
 				{ text = "The green number is how many a trainer can teach you right now.", color = "muted" },
@@ -317,7 +317,7 @@ local function createToggleButton()
 	-- follow the frame itself rather than TRADE_SKILL_SHOW / TRADE_SKILL_CLOSE. Closing with it
 	-- is handled by the docked window.
 	ProfessionsFrame:HookScript("OnShow", ns:Guard("Professions OnShow", function()
-		if ns.db.settings.panel and not dockedShown() then UI:Open() else UI:Refresh() end
+		if ns.db.settings.panel and not dockedShown() then Panel:Open() else Panel:Refresh() end
 	end))
 	return true
 end
@@ -330,11 +330,16 @@ setUp = ns:Guard("Professions window", function(retry)
 		return
 	end
 	-- The first time, the frame is already showing before the OnShow hook exists.
-	if createToggleButton() and ns.db.settings.panel then UI:Open() end
-	UI:Refresh()
+	if createToggleButton() and ns.db.settings.panel then Panel:Open() end
+	Panel:Refresh()
 end)
 
 ns:On("TRADE_SKILL_SHOW", function()
 	-- ProfessionsFrame loads on demand and shows in the same frame; set up on the next one.
 	C_Timer.After(0, function() setUp(true) end)
+end)
+
+ns:On("RecipesChanged", function() Panel:Refresh() end)
+ns:On("SettingChanged", function(key)
+	if key == "hideUnknown" or key == "panel" then Panel:Refresh() end
 end)

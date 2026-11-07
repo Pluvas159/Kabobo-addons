@@ -5,7 +5,7 @@
 -- that. It reads every recipe ID of the open profession itself and keeps the unlearned ones, with
 -- Blizzard's source text ("Trainer", "Vendor: ...", "Drop: ..."), for its own list.
 --
--- C_TradeSkillUI is only called between TRADE_SKILL_SHOW and TRADE_SKILL_CLOSE, and only for the
+-- C_TradeSkillUI is only called while the trade skill session is open, and only for the
 -- character's own professions (not linked, guild or NPC crafting views).
 local _, ns = ...
 local R = ns:NewModule("Recipes")
@@ -19,27 +19,16 @@ local RESCAN_AFTER = 60
 
 R.current = nil            -- name of the profession open in the window
 
--- This character's professions: name -> { skill, max, line }, and whether any were listed.
--- Reads spellbook skill data only, which is safe at any time.
-function R:KnownProfessions()
-	local out, any = {}, false
-	if not (GetProfessions and GetProfessionInfo) then return out, false end
-	for _, index in pairs({ GetProfessions() }) do
-		local name, _, rank, maxRank, _, _, skillLine = GetProfessionInfo(index)
-		if name then
-			out[name] = { skill = rank, max = maxRank, line = skillLine }
-			any = true
-		end
-	end
-	return out, any
-end
+local trade = ns:Session("TRADE_SKILL_SHOW", "TRADE_SKILL_CLOSE")
+local scanning = false
+local lastScan = {}        -- [professionName] = time() of the last finished read
 
 -- Keep skill levels current and drop professions this character no longer has. Pruning only
 -- runs when the client lists at least one profession, so an early call cannot wipe everything.
 function R:SyncProfessions(prune)
 	local char = D:Char(false)
 	if not char then return end
-	local known, any = R:KnownProfessions()
+	local known, any = ns:KnownProfessions()
 	for name, p in pairs(char) do
 		local k = known[name]
 		if k then
@@ -51,7 +40,7 @@ function R:SyncProfessions(prune)
 end
 
 -- Merge one read of a profession into its saved entry.
---   unlearned = { [recipeID] = { n, i, s } }, learned = { [lowercase name] = true }
+--   unlearned = { [recipeID] = { n, i, s, g, t } }, learned = { [lowercase name] = true }
 --   complete  = every recipe was read without errors, so the read can replace the saved list
 function R.Store(name, info, unlearned, learned, complete)
 	local p = D:Prof(name, true)
@@ -75,34 +64,17 @@ end
 
 -- Reading the window ----------------------------------------------------------
 
-local windowOpen = false
-local scanning = false
-local failures = 0
-local lastScan = {}        -- [professionName] = time() of the last finished read
-
-local function call(fn, ...)
-	if not fn then return nil end
-	local ok, a = pcall(fn, ...)
-	if ok then return a end
-	failures = failures + 1
-	return nil
+local function viewingOwnProfession(TS, api)
+	return TS and trade.open and not (api:Call(TS.IsTradeSkillLinked) or api:Call(TS.IsTradeSkillGuild)
+		or api:Call(TS.IsNPCCrafting))
 end
 
-local function viewingOwnProfession(TS)
-	if not TS or not windowOpen then return false end
-	if call(TS.IsTradeSkillLinked) or call(TS.IsTradeSkillGuild) or call(TS.IsNPCCrafting) then
-		return false
-	end
-	return true
-end
-
--- Name of the open profession, as GetProfessionInfo spells it, so every source of data uses
--- the same key. Returns name, base info.
-local function currentProfession(TS)
-	local base = call(TS.GetBaseProfessionInfo)
+-- Name of the open profession, as GetProfessionInfo spells it, so every source of data uses the
+-- same key. Returns name, base info.
+local function currentProfession(TS, api)
+	local base = api:Call(TS.GetBaseProfessionInfo)
 	if not base or not base.professionID or base.professionID == 0 then return nil end
-	local known = R:KnownProfessions()
-	for name, k in pairs(known) do
+	for name, k in pairs(ns:KnownProfessions()) do
 		if name == base.professionName or (k.line and k.line == base.professionID) then
 			return name, base
 		end
@@ -112,23 +84,23 @@ end
 
 -- All recipe IDs of the open profession. The second value says whether the list includes
 -- unlearned recipes for sure: GetFilteredRecipeIDs follows Blizzard's filters, which hide them.
-local function recipeIDs(TS)
-	local ids = call(TS.GetAllRecipeIDs)
+local function recipeIDs(TS, api)
+	local ids = api:Call(TS.GetAllRecipeIDs)
 	if type(ids) == "table" and #ids > 0 then return ids, true end
-	ids = call(TS.GetFilteredRecipeIDs)
+	ids = api:Call(TS.GetFilteredRecipeIDs)
 	if type(ids) == "table" then return ids, false end
 	return nil, false
 end
 
-local function readRecipe(TS, id, unlearned, learned)
-	local info = call(TS.GetRecipeInfo, id)
+local function readRecipe(TS, api, id, unlearned, learned)
+	local info = api:Call(TS.GetRecipeInfo, id)
 	if type(info) ~= "table" or not info.name or info.isDummyRecipe then return end
 	if info.learned then
 		local key = D.Key(info.name)
 		if key then learned[key] = true end
 		return
 	end
-	local source = call(TS.GetRecipeSourceText, id)
+	local source = api:Call(TS.GetRecipeSourceText, id)
 	unlearned[id] = {
 		n = info.name,
 		i = info.icon,
@@ -140,20 +112,93 @@ local function readRecipe(TS, id, unlearned, learned)
 	}
 end
 
--- /pprof dump: prints what the client returns for a few unlearned recipes, to work out what
--- Forever offers in place of source text. Only runs while the profession window is open.
-function R:Dump(count)
+function R:Scan(force)
 	local TS = C_TradeSkillUI
-	if not viewingOwnProfession(TS) then
+	local api = ns.NewCaller()
+	if scanning or not viewingOwnProfession(TS, api) then return end
+	local name, base = currentProfession(TS, api)
+	if not name then return end
+	if R.current ~= name then
+		R.current = name
+		ns:Send("RecipesChanged")
+	end
+	if not force and lastScan[name] and time() - lastScan[name] < RESCAN_AFTER then return end
+	local ids, all = recipeIDs(TS, api)
+	if not ids then return end
+
+	scanning = true
+	local unlearned, learned = {}, {}
+	ns:Spread({
+		name = "Recipe scan",
+		count = #ids,
+		size = SCAN_BATCH,
+		-- The window can close between frames; drop the read rather than call the API closed.
+		alive = function() return trade.open end,
+		step = function(i) readRecipe(TS, api, ids[i], unlearned, learned) end,
+		done = function(ok)
+			scanning = false
+			if not ok then return end
+			R.Store(name, base, unlearned, learned, all and api.failures == 0)
+			lastScan[name] = time()
+			ns:Debug("recipes:", name, #ids, "recipes read,", api.failures, "failed calls, all =", tostring(all))
+			ns:Send("RecipesChanged")
+		end,
+	})
+end
+
+-- Opening the window or switching profession forces a reread; list updates while crafting do
+-- not. A burst of events is read once it settles, forced if any of them asked for it.
+local forceNext = false
+local scanSoon = ns:Debounce("Recipe scan", 0.5, function()
+	local force = forceNext
+	forceNext = false
+	R:Scan(force)
+end)
+local function requestScan(force)
+	forceNext = forceNext or force
+	scanSoon()
+end
+
+ns:On("TRADE_SKILL_SHOW", function() requestScan(true) end)
+-- Fires when the list changes, including switching to another profession in the window.
+ns:On("TRADE_SKILL_LIST_UPDATE", function() requestScan(false) end)
+ns:On("TRADE_SKILL_DATA_SOURCE_CHANGED", function() requestScan(true) end)
+ns:On("TRADE_SKILL_CLOSE", function()
+	R.current = nil
+	ns:Send("RecipesChanged")
+end)
+
+-- Learned from a trainer, a recipe item or anywhere else: take it off the list straight away.
+ns:On("NEW_RECIPE_LEARNED", function(recipeID)
+	D:Forget(recipeID, C_Spell and ns.Try(C_Spell.GetSpellName, recipeID))
+end)
+
+ns:On("SKILL_LINES_CHANGED", function()
+	R:SyncProfessions(false)
+	ns:Send("RecipesChanged")
+end)
+
+function R:OnLogin()
+	R:SyncProfessions(true)
+end
+
+-- /pprof dump ---------------------------------------------------------------------
+
+-- Prints what the client returns for a few unlearned recipes, to work out what Forever offers in
+-- place of source text. Only runs while the profession window is open.
+function R:Dump(count)
+	local TS, api = C_TradeSkillUI, ns.NewCaller()
+	if not viewingOwnProfession(TS, api) then
 		ns:Print("open one of your profession windows first.")
 		return
 	end
-	local ids, all = recipeIDs(TS)
-	ns:Print(string.format("%s: %d recipe IDs (all = %s)", tostring((currentProfession(TS))), ids and #ids or 0, tostring(all)))
+	local ids, all = recipeIDs(TS, api)
+	ns:Print(string.format("%s: %d recipe IDs (all = %s)", tostring((currentProfession(TS, api))),
+		ids and #ids or 0, tostring(all)))
 	if TS.IsAnyRecipeFromSource then
 		local found = {}
 		for i = 1, 20 do
-			if call(TS.IsAnyRecipeFromSource, i) then
+			if api:Call(TS.IsAnyRecipeFromSource, i) then
 				found[#found + 1] = i .. "=" .. tostring(_G["BATTLE_PET_SOURCE_" .. i])
 			end
 		end
@@ -161,103 +206,18 @@ function R:Dump(count)
 	end
 	local shown = 0
 	for _, id in ipairs(ids or {}) do
-		local info = call(TS.GetRecipeInfo, id)
+		local info = api:Call(TS.GetRecipeInfo, id)
 		if type(info) == "table" and not info.learned then
 			local fields = {}
 			for k, v in pairs(info) do
 				if type(v) ~= "table" then fields[#fields + 1] = k .. "=" .. tostring(v) end
 			end
 			table.sort(fields)
-			local source = call(TS.GetRecipeSourceText, id)
-			print(string.format("  |cffffd200%d %s|r source=%s", id, tostring(info.name), tostring(source)))
+			local source = api:Call(TS.GetRecipeSourceText, id)
+			print(string.format("  %s source=%s", ns.PluvasUI.Color(id .. " " .. tostring(info.name), "gold"), tostring(source)))
 			print("    " .. table.concat(fields, " "))
 			shown = shown + 1
 			if shown >= (count or 3) then break end
 		end
 	end
-end
-
-function R:Scan(force)
-	local TS = C_TradeSkillUI
-	if scanning or not viewingOwnProfession(TS) then return end
-	local name, base = currentProfession(TS)
-	if not name then return end
-	R.current = name
-	if not force and lastScan[name] and time() - lastScan[name] < RESCAN_AFTER then return end
-	failures = 0
-	local ids, all = recipeIDs(TS)
-	if not ids then return end
-
-	scanning = true
-	local unlearned, learned, i = {}, {}, 1
-	local function batch()
-		local stop = math.min(i + SCAN_BATCH - 1, #ids)
-		for n = i, stop do readRecipe(TS, ids[n], unlearned, learned) end
-		i = stop + 1
-		return i <= #ids
-	end
-	local function step()
-		-- The window can close between frames; drop the read rather than call the API closed.
-		if not windowOpen then scanning = false; return end
-		local ok, more = pcall(batch)
-		if not ok then
-			scanning = false
-			geterrorhandler()("Recipe scan: " .. tostring(more))
-		elseif more then
-			C_Timer.After(0, step)
-		else
-			R.Store(name, base, unlearned, learned, all and failures == 0)
-			lastScan[name] = time()
-			scanning = false
-			ns:Debug("recipes:", name, #ids, "recipes read,", failures, "failed calls, all =", tostring(all))
-			ns.UI:Refresh()
-		end
-	end
-	step()
-end
-
-local pending, pendingForce = false, false
-local guardedScan = ns:Guard("Recipe scan", function(force) R:Scan(force) end)
-local function scanSoon(force)
-	pendingForce = pendingForce or force == true
-	if pending then return end
-	pending = true
-	C_Timer.After(0.5, function()
-		local f = pendingForce
-		pending, pendingForce = false, false
-		guardedScan(f)
-	end)
-end
-
-ns:On("TRADE_SKILL_SHOW", function()
-	windowOpen = true
-	scanSoon(true)
-end)
--- Fires when the list changes, including switching to another profession in the window.
-ns:On("TRADE_SKILL_LIST_UPDATE", function() scanSoon(false) end)
-ns:On("TRADE_SKILL_DATA_SOURCE_CHANGED", function() scanSoon(true) end)
-ns:On("TRADE_SKILL_CLOSE", function()
-	windowOpen = false
-	R.current = nil
-	ns.UI:Refresh()
-end)
-
--- Learned from a trainer, a recipe item or anywhere else: take it off the list straight away.
-ns:On("NEW_RECIPE_LEARNED", function(recipeID)
-	local name
-	if C_Spell and C_Spell.GetSpellName then
-		local ok, n = pcall(C_Spell.GetSpellName, recipeID)
-		if ok then name = n end
-	end
-	D:Forget(recipeID, name)
-	ns.UI:Refresh()
-end)
-
-ns:On("SKILL_LINES_CHANGED", function()
-	R:SyncProfessions(false)
-	ns.UI:Refresh()
-end)
-
-function R:OnLogin()
-	R:SyncProfessions(true)
 end

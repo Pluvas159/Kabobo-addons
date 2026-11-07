@@ -202,19 +202,10 @@ end
 
 -- Saved data --------------------------------------------------------------
 
+-- This character's professions: { [professionID] = { name, r = { [outputItemID] = recipe } } }.
+-- nil before login.
 function C:CharTable()
-	if not ns.realmKey then return nil end
-	local realm = ns.db.crafts[ns.realmKey]
-	if not realm then
-		realm = {}
-		ns.db.crafts[ns.realmKey] = realm
-	end
-	local me = realm[ns.charName]
-	if not me then
-		me = {}
-		realm[ns.charName] = me
-	end
-	return me
+	return ns.Ensure(ns.db.crafts, ns.realmKey, ns.charName)
 end
 
 -- Recipe string for the item if this character can craft it, else nil.
@@ -242,100 +233,19 @@ function C:Store(professionID, name, recipes, complete)
 	me[professionID] = { name = name, r = recipes }
 end
 
--- Reading the profession window ---------------------------------------------
-
-local TS = C_TradeSkillUI
-local scanning = false
-local windowOpen = false   -- C_TradeSkillUI is only called between TRADE_SKILL_SHOW and _CLOSE
-
-local failures = 0   -- client calls that raised an error during the current scan
-
-local function call(fn, ...)
-	if not fn then return nil end
-	local ok, a = pcall(fn, ...)
-	if ok then return a end
-	failures = failures + 1
-	return nil
-end
-
-local function readRecipe(recipeID)
-	local info = call(TS.GetRecipeInfo, recipeID)
-	if not info or not info.learned then return nil end
-	return C.FromSchematic(call(TS.GetRecipeSchematic, recipeID, false))
-end
-
--- The window's own recipe, for the profession window panel. Only call while the window is open.
-function C:ReadSchematic(recipeID)
-	-- Blizzard may draw the recipe before our TRADE_SKILL_SHOW handler runs, so also accept a
-	-- shown profession window.
-	local open = windowOpen or (ProfessionsFrame and ProfessionsFrame.IsShown and ProfessionsFrame:IsShown())
-	if not (TS and open and recipeID) then return nil end
-	return C.FromSchematic(call(TS.GetRecipeSchematic, recipeID, false))
-end
-
-local function viewingOwnProfession()
-	if not TS or not windowOpen then return false end
-	if call(TS.IsTradeSkillLinked) or call(TS.IsTradeSkillGuild) or call(TS.IsNPCCrafting) then
-		return false
-	end
-	return true
-end
-
-function C:Scan()
-	if scanning or not viewingOwnProfession() or not TS.GetAllRecipeIDs then return end
-	local base = call(TS.GetBaseProfessionInfo)
-	local professionID = base and base.professionID
-	if not professionID or professionID == 0 then return end
-	local ids = call(TS.GetAllRecipeIDs)
-	if type(ids) ~= "table" or #ids == 0 then return end
-
-	scanning = true
-	failures = 0
-	local recipes, i, count = {}, 1, 0
-	local function batch()
-		local stop = math.min(i + SCAN_BATCH - 1, #ids)
-		for n = i, stop do
-			local out, recipe = readRecipe(ids[n])
-			if out then
-				recipes[out] = recipe
-				count = count + 1
-			end
-		end
-		i = stop + 1
-		return i <= #ids
-	end
-	local function step()
-		local ok, more = pcall(batch)
-		if not ok then
-			scanning = false   -- keep what was saved before; the next window update retries
-			geterrorhandler()("Crafting scan: " .. tostring(more))
-		elseif more then
-			C_Timer.After(0, step)
-		else
-			C:Store(professionID, base.professionName, recipes, failures == 0)
-			if failures > 0 then ns:Debug("crafting: " .. failures .. " recipe reads failed") end
-			scanning = false
-			ns:Debug("crafting: stored", count, "recipes for profession", professionID)
-		end
-	end
-	step()
-end
-
 -- Drop professions this character no longer has. Only runs when the client lists at least one
 -- profession, so a login before profession data arrives cannot wipe everything.
 function C:PruneProfessions()
-	if not (GetProfessions and GetProfessionInfo) then return end
-	local have, any = {}, false
-	for _, index in pairs({ GetProfessions() }) do
-		local name, _, _, _, _, _, skillLine = GetProfessionInfo(index)
-		if name then have[name] = true; any = true end
-		if skillLine then have[skillLine] = true end
-	end
-	if not any then return end
-	local me = C:CharTable()
+	local known, any = ns:KnownProfessions()
+	local me = any and C:CharTable()
 	if not me then return end
-	-- Match on ID or name, since the base profession ID and the skill line are not confirmed
-	-- to be the same number on Forever.
+	-- Match on ID or name, since the base profession ID and the skill line are not confirmed to
+	-- be the same number on Forever.
+	local have = {}
+	for name, p in pairs(known) do
+		have[name] = true
+		if p.line then have[p.line] = true end
+	end
 	for professionID, prof in pairs(me) do
 		if not have[professionID] and not (prof.name and have[prof.name]) then
 			me[professionID] = nil
@@ -343,27 +253,73 @@ function C:PruneProfessions()
 	end
 end
 
-local pending = false
-local guardedScan = ns:Guard("Crafting scan", function() C:Scan() end)
-local function scanSoon()
-	if pending then return end
-	pending = true
-	-- The list fires several updates while it fills; read it once it settles.
-	C_Timer.After(0.5, function()
-		pending = false
-		guardedScan()
-	end)
+-- Reading the profession window ---------------------------------------------
+--
+-- C_TradeSkillUI is only called while the trade skill session is open, for the character's own
+-- professions (not linked, guild or NPC crafting views).
+
+local trade = ns:Session("TRADE_SKILL_SHOW", "TRADE_SKILL_CLOSE")
+local scanning = false
+
+-- The recipe the profession window shows, for the profession window panel.
+function C:ReadSchematic(recipeID)
+	local TS = C_TradeSkillUI
+	-- Blizzard may draw the recipe before our TRADE_SKILL_SHOW handler runs, so also accept a
+	-- shown profession window.
+	local open = trade.open or (ProfessionsFrame and ProfessionsFrame.IsShown and ProfessionsFrame:IsShown())
+	if not (TS and open and recipeID) then return nil end
+	return C.FromSchematic(ns.Try(TS.GetRecipeSchematic, recipeID, false))
 end
 
-ns:On("TRADE_SKILL_SHOW", function()
-	windowOpen = true
-	scanSoon()
-end)
-ns:On("TRADE_SKILL_CLOSE", function() windowOpen = false end)
--- Also fires when a recipe is learned while the window is open.
+local function viewingOwnProfession(TS, api)
+	return trade.open and not (api:Call(TS.IsTradeSkillLinked) or api:Call(TS.IsTradeSkillGuild)
+		or api:Call(TS.IsNPCCrafting))
+end
+
+function C:Scan()
+	local TS = C_TradeSkillUI
+	if scanning or not (TS and TS.GetAllRecipeIDs) then return end
+	local api = ns.NewCaller()
+	if not viewingOwnProfession(TS, api) then return end
+	local base = api:Call(TS.GetBaseProfessionInfo)
+	local professionID = base and base.professionID
+	if not professionID or professionID == 0 then return end
+	local ids = api:Call(TS.GetAllRecipeIDs)
+	if type(ids) ~= "table" or #ids == 0 then return end
+
+	scanning = true
+	local recipes, count = {}, 0
+	ns:Spread({
+		name = "Crafting scan",
+		count = #ids,
+		size = SCAN_BATCH,
+		-- The window can close between frames; drop the read rather than call the API closed.
+		alive = function() return trade.open end,
+		step = function(i)
+			local info = api:Call(TS.GetRecipeInfo, ids[i])
+			if not (info and info.learned) then return end
+			local out, recipe = C.FromSchematic(api:Call(TS.GetRecipeSchematic, ids[i], false))
+			if out then
+				recipes[out] = recipe
+				count = count + 1
+			end
+		end,
+		done = function(ok)
+			scanning = false
+			if not ok then return end   -- keep what was saved; the next window update retries
+			C:Store(professionID, base.professionName, recipes, api.failures == 0)
+			if api.failures > 0 then ns:Debug("crafting: " .. api.failures .. " recipe reads failed") end
+			ns:Debug("crafting: stored", count, "recipes for profession", professionID)
+		end,
+	})
+end
+
+-- The list fires several updates while it fills; read it once it settles. Also fires when a
+-- recipe is learned while the window is open.
+local scanSoon = ns:Debounce("Crafting scan", 0.5, function() C:Scan() end)
+ns:On("TRADE_SKILL_SHOW", scanSoon)
 ns:On("TRADE_SKILL_LIST_UPDATE", scanSoon)
 
 function C:OnLogin()
-	TS = C_TradeSkillUI
 	C:PruneProfessions()
 end

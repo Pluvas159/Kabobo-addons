@@ -40,6 +40,7 @@ you want it.
 | `/pprof trainer` | Make profession trainers list recipes you cannot learn yet (on/off, default on) |
 | `/pprof unknown` | Hide recipes the game gives no source for (on/off) |
 | `/pprof reset` | Forget this character's recipe data |
+| `/pprof help` | List the commands and the state of each setting |
 | `/pprof dump` | With a profession window open: print what the game returns for a few unlearned recipes (for troubleshooting) |
 
 ## How it gets the data
@@ -52,6 +53,23 @@ you want it.
 - Trainer requirements and costs are shared by all your characters. The list of what is still
   unlearned is kept per character.
 
+## Files
+
+| File | Role |
+| --- | --- |
+| `Core.lua` | Saved variables and slash commands |
+| `Data.lua` | The saved recipe, trainer and vendor data |
+| `Rows.lua` | Turns that data into the grouped, sorted rows of the list (pure, unit tested) |
+| `Recipes.lua` | Reads the open profession window |
+| `Trainer.lua` | Reads what profession trainers teach |
+| `Vendor.lua` | Learns which vendors sell recipes |
+| `Panel.lua` | The unlearned-recipes panel and its button under the profession window |
+
+The readers send `RecipesChanged` after each change, and the panel redraws. The runtime comes from
+`Libs/PluvasCore`, the look from `Libs/PluvasUI`.
+
 ## Changelog
 
+- **Unreleased**: rebuilt on the shared PluvasCore runtime. Prices in the list group thousands of
+  gold (`1,200g`), like Pluvas' Auctions.
 - **0.1.0**: first version.

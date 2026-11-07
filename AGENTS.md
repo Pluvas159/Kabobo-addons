@@ -25,11 +25,12 @@ Add new addons to this table.
 3. **It is symlinked into the game.** `scripts/install.ps1` symlinks *every* addon in `addons/`
    into the Forever client's `Interface\AddOns`. Rerun it after adding, renaming or removing an
    addon.
-4. **Its UI is built with PluvasUI**, the shared UI library embedded in `Libs/PluvasUI`, so every
-   addon looks and behaves the same. See [UI](#ui) below.
+4. **It runs on PluvasCore and its UI is built with PluvasUI**, the shared libraries embedded in
+   `Libs/PluvasCore` and `Libs/PluvasUI`, so every addon is put together, looks and behaves the
+   same. See [Code conventions](#code-conventions) and [UI](#ui) below.
 
-`npm test` fails if rule 1 or 2 is broken, or if an embedded PluvasUI copy differs from
-`shared/PluvasUI`. `scripts/new-addon.ps1` creates addons that already follow all four.
+`npm test` fails if rule 1 or 2 is broken, or if an addon does not embed every shared library or a
+copy differs from `shared/`. `scripts/new-addon.ps1` creates addons that already follow all four.
 
 ## Target client: read this first
 
@@ -53,8 +54,10 @@ confirm or disprove something about the client, update that file.
 addons/<Name>/          one folder per addon, installed into the game as-is
   <Name>.toc            folder name must equal the TOC name
   *.lua
-  Libs/PluvasUI/        embedded copy of shared/PluvasUI (generated: never edit here)
+  Libs/PluvasCore/      embedded copies of shared/ libraries (generated: never edit here)
+  Libs/PluvasUI/
 shared/
+  PluvasCore/           the shared runtime: events, modules, saved variables, slash, tasks
   PluvasUI/             the shared UI library: the only place to edit it (README = UI rules)
 tests/
   run.js                test runner (Node + fengari Lua VM + luaparse)
@@ -103,23 +106,32 @@ Edits are live after `/reload` in game. Newly added addon folders need a game re
 - **Namespace**: start each file with `local ADDON, ns = ...` (or `local _, ns = ...`). Share code
   through `ns`. The only globals allowed are SavedVariables, `SLASH_*`/`SlashCmdList` entries, and
   named frames, all prefixed with the addon name (`PluvasAuctionsDB`, `PluvasAuctionsFrame`).
-- **Modules**: Pluvas' Auctions uses `ns:NewModule(name)` with optional `OnInit` (after
-  SavedVariables load), `OnLogin` and `OnLogout`. Follow the same pattern in new addons when they
-  grow past one file.
-- **Events**: register through `ns:On(event, fn)`. It `pcall`s `RegisterEvent`, because unknown
-  events raise errors on the modern client, and it `pcall`s handlers so one bug cannot break the
-  rest.
-- **Saved variables**: merge defaults on load, keep a `dbVersion` for migrations, and keep keys
-  short in tables that grow per item (they are written to disk every logout).
+- **Runtime**: every addon runs on **PluvasCore** (`shared/PluvasCore`, API in its
+  [README](shared/PluvasCore/README.md)). An addon's `Core.lua` only declares its saved variables
+  (`ns:Setup`) and slash commands (`ns:Slash`); everything else lives in modules. Never copy
+  runtime code into an addon: add it to PluvasCore, with tests.
+- **Modules**: one file per concern, made with `ns:NewModule(name)`, with optional `OnInit`
+  (saved variables loaded), `OnLogin` (identity known) and `OnLogout`. Keep data modules (reading,
+  storing, computing) apart from UI modules (windows, panels, buttons).
+- **Events and messages**: register through `ns:On(name, fn)`, which guards every handler.
+  Data modules announce changes with addon messages (`ns:Send("LedgerChanged")`) and UI modules
+  listen to them; a data module never calls into the UI. List an addon's messages at the top of
+  its `Core.lua`.
+- **Saved variables**: declare `defaults` and `dbVersion` in `ns:Setup`. When a layout changes,
+  bump `dbVersion` and add a migration rather than patching data on the fly. Keep keys short in
+  tables that grow per item (they are written to disk every logout).
 - **Taint**: never overwrite Blizzard functions or secure frames. Use `hooksecurefunc` /
   `HookScript`. Do not touch protected actions in combat.
 - **Crash safety**: Lua errors never crash the game, but calling a Blizzard C function outside the
   context it was built for can (`pcall` cannot catch that; see docs/forever-client.md). Tooltips
   and other hot paths read only saved data and plain item info. Call system APIs
-  (`C_AuctionHouse`, `C_TradeSkillUI`, ...) only while their window is open, from events.
+  (`C_AuctionHouse`, `C_TradeSkillUI`, ...) only while their window is open: track it with
+  `ns:Session`, read through `ns.NewCaller()`, and check `session.open` before every batch.
   Wrap hooks and callbacks in `ns:Guard(name, fn)`, which turns a feature off after repeated
   errors.
-- **Performance**: spread heavy loops (e.g. full AH scans) over frames with `C_Timer.After(0, ...)`.
+- **Performance**: spread heavy loops (full AH scans, recipe reads) over frames with `ns:Spread`,
+  and debounce bursts of list updates with `ns:Debounce`. Cache what hot paths (tooltips) would
+  otherwise recompute, and drop the cache when the data changes.
 - **Style**: tabs for Lua and TOC files (see `.editorconfig`). Comment why, not what. Keep pure
   logic (math, parsing, matching) in functions that do not read game state, so it can be tested.
 - Timestamps: `time()`. Money: copper integers, formatted only for display.
@@ -130,12 +142,15 @@ Every window, button, list and tooltip is built with **PluvasUI** (`ns.PluvasUI`
 and style rules are in [shared/PluvasUI/README.md](shared/PluvasUI/README.md). In short:
 
 - **Edit only `shared/PluvasUI`**, then run `npm run sync`. Each addon carries its own copy in
-  `Libs/PluvasUI` (loaded first via `LibsPluvasUIPluvasUI.xml` in the TOC), so it still ships on
-  its own. Copies attach to the addon's `ns` and create no globals, so addons never clash.
+  `Libs/PluvasUI` (loaded right after PluvasCore via `Libs\PluvasUI\PluvasUI.xml` in the TOC), so
+  it still ships on its own. Copies attach to the addon's `ns` and create no globals, so addons never clash.
 - **No hard-coded look in addon code**: colors (`PUI.Color(text, "good")`), fonts, sizes and
-  templates come from `Style.lua`. A restyle is a change to that file.
+  templates come from `Style.lua`. Money and time go through `PUI.Money`/`MoneyIcons`/
+  `SignedMoney`/`Age`/`Clock`. A restyle is a change to the library.
 - **Use the widgets**: `PUI.Window` (dockable, Escape handling, remembered position, Pluvas
-  signature, footer), `PUI.List`, `PUI.TabBar`, `PUI.Button`, `PUI.ShowTooltip`/`SetTooltip`.
+  signature, footer), `PUI.List` (optionally with column headers), `PUI.Grid`, `PUI.TabBar`,
+  `PUI.Button`, `PUI.ShowTooltip`/`SetTooltip`, and label/value lines (`PUI.AddTooltipLines`,
+  `PUI.LinePanel`) for item tooltips and info panels.
   If a widget is missing, add it to the library (with tests) rather than building one in an addon.
 - **Lightweight**: build UI the first time it opens, not at load; no `OnUpdate` scripts (events
   and `C_Timer` only, tickers only while their window is open); refresh only what is visible and
@@ -147,7 +162,8 @@ and style rules are in [shared/PluvasUI/README.md](shared/PluvasUI/README.md). I
 `npm test` does this for every addon:
 
 1. It checks the TOC metadata against the rules above (category, interface, title, ...).
-2. It checks that embedded shared libraries match `shared/` and are loaded by the TOC.
+2. It checks that the addon embeds every shared library, that each copy matches `shared/`, and
+   that the TOC loads it.
 3. It parses each `.lua` file the TOC loads (directly or through an `.xml` include) as
    **Lua 5.1**, which catches syntax the game would reject.
 4. It loads the addon into a fengari VM with `tests/lib/mocks.lua` and runs `tests/<Name>/*.lua`.

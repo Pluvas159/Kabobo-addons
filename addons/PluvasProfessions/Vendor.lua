@@ -6,13 +6,15 @@
 -- teaches, shared by all characters: db.vendor[lowercase recipe name] = { v = vendor, z = zone,
 -- c = copper, it = item name, lim = limited supply }.
 --
--- The merchant API is only called between MERCHANT_SHOW and MERCHANT_CLOSED.
+-- The merchant API is only called while the merchant session is open.
 local _, ns = ...
 local V = ns:NewModule("Vendor")
 local D = ns.Data
 
 local RECIPE_CLASS = 9   -- Enum.ItemClass.Recipe
 local BOOK_SUBCLASS = 0  -- Enum.ItemRecipeSubclass.Book: profession books, not single recipes
+
+local merchant = ns:Session("MERCHANT_SHOW", "MERCHANT_CLOSED")
 
 -- "Pattern: Red Linen Robe" -> "Red Linen Robe". Every recipe item prefixes the name it teaches
 -- with a type word and a colon (Pattern, Recipe, Plans, Formula, Schematic, Manual, ...).
@@ -38,8 +40,6 @@ function V.Record(item)
 	return true
 end
 
-local open = false
-
 local function itemInfo(i)
 	if C_MerchantFrame and C_MerchantFrame.GetItemInfo then
 		local info = C_MerchantFrame.GetItemInfo(i)
@@ -60,7 +60,7 @@ local function isRecipeItem(link)
 end
 
 function V:Read()
-	if not open or not GetMerchantNumItems then return end
+	if not merchant.open or not GetMerchantNumItems then return end
 	local npc = UnitName("npc")
 	local zone = GetZoneText and GetZoneText() or nil
 	local count = 0
@@ -77,25 +77,13 @@ function V:Read()
 	end
 	if count > 0 then
 		ns:Debug("vendor: recorded", count, "recipes from", tostring(npc))
-		ns.UI:Refresh()
+		ns:Send("RecipesChanged")
 	end
 end
 
-local pending = false
-local guardedRead = ns:Guard("Vendor read", function() V:Read() end)
-local function readSoon()
-	if pending or not open then return end
-	pending = true
-	-- Item data can arrive a moment after the window opens; read once it settles.
-	C_Timer.After(0.3, function()
-		pending = false
-		guardedRead()
-	end)
-end
-
-ns:On("MERCHANT_SHOW", function()
-	open = true
-	readSoon()
+-- Item data can arrive a moment after the window opens; read once it settles.
+local readSoon = ns:Debounce("Vendor read", 0.3, function() V:Read() end)
+ns:On("MERCHANT_SHOW", readSoon)
+ns:On("MERCHANT_UPDATE", function()
+	if merchant.open then readSoon() end
 end)
-ns:On("MERCHANT_UPDATE", readSoon)
-ns:On("MERCHANT_CLOSED", function() open = false end)

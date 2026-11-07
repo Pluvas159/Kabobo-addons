@@ -2,5 +2,5 @@
   "$schema": "https://raw.githubusercontent.com/LuaLS/vscode-lua/master/setting/schema.json",
   "runtime.version": "Lua 5.1",
   "workspace.ignoreDir": ["node_modules", ".git"],
-  "diagnostics.globals": ["_NS", "_FIRE", "_RUN_TIMERS", "_REAL_PRINT", "_RESULTS", "test", "eq", "near", "truthy"]
+  "diagnostics.globals": ["_NS", "_FIRE", "_RUN_TIMERS", "_REAL_PRINT", "_RESULTS", "_PRINTED", "_EVENT_FRAMES", "test", "eq", "near", "truthy"]
 }

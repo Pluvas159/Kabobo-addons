@@ -7,8 +7,10 @@ The shared UI library of every Pluvas addon: one look, one set of widgets, kept 
 - **Edit it only here**, in `shared/PluvasUI`. Then run `npm run sync`, which copies the `.lua` and
   `.xml` files into every addon that embeds it (`addons/<Name>/Libs/PluvasUI`). `npm test` fails
   when a copy differs, so a hand edit in `Libs/` cannot slip through.
-- An addon loads it first, with one TOC line: `Libs\PluvasUI\PluvasUI.xml`. The xml lists the files
-  in load order, so adding a file here never touches the TOCs.
+- An addon loads it right after [PluvasCore](../PluvasCore), with one TOC line:
+  `Libs\PluvasUI\PluvasUI.xml`. The xml lists the files in load order (`Style`, `Format`,
+  `Widgets`, `List`, `Window`), so adding a file here never touches the TOCs. PluvasUI works without
+  PluvasCore too; with it, widget callbacks are guarded by `ns:Guard`.
 - Each copy attaches to its addon's namespace (`ns.PluvasUI`) and creates **no globals**. Two
   addons with different versions never clash, and each addon still ships on its own.
 - New addons get it from `scripts/new-addon.ps1`. To add it to an existing addon:
@@ -30,6 +32,7 @@ Addon code never hard-codes the look. Everything comes from `Style.lua`:
 | `PUI.Fonts` | `title`, `heading`, `label`, `body`, `muted` |
 | `PUI.Sizes` | `pad` 14, `contentTop` 30, `gap` 4, `row` 18, `icon` 16, `button` 22, `tab` 20 |
 | `PUI.Templates` | the Blizzard templates behind windows and buttons |
+| `PUI.Coins` | coin colors, letters and icons behind `PUI.Money` |
 | `PUI.Prefix(title)` | chat prefix `Addon Title:` in the accent color |
 
 - Windows use the Blizzard frame look, so the addons sit naturally next to the game's own windows.
@@ -89,13 +92,45 @@ local list = PUI.List(window, {
 })
 list:SetPoint("TOPLEFT", window, "TOPLEFT", 10, -76)
 list:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -12, 34)
-list:SetItems(items, keepOffset)   list:SetEmptyText("Nothing yet.")
+list:SetItems(items, keepOffset)   list:SetEmptyText("Nothing yet.")   list:ScrollToTop()
 local first, last, total = list:Range()
 ```
+
+A `kind = "columns"` list made with `headers = true` reserves a header line above its rows, laid
+out along the same columns: `list:SetHeaders("When", "Item", ...)`.
 
 The list fills its height with rows and refits when its size changes (docking, resizing).
 `PUI.SetIconRow(row, { header = true, text, right })` draws a gold header without an icon.
 `PUI.SetColumns(row, a, b, c)` fills column rows.
+
+### Formatting
+
+```lua
+PUI.Money(123456)          -- "12g 34s 56c" with colored letters; nil gives a muted "-"
+PUI.MoneyIcons(123456)     -- same with coin icons (tooltips, panels)
+PUI.SignedMoney(-500, icons)  -- green "+" / red "-" before the amount
+PUI.Age(3600)              -- "1h"        PUI.Clock(65) -- "1:05"
+```
+
+### Label/value lines
+
+Item tooltips and info panels share one line format, so both look the same:
+`{ "Label", "value" }` (accent label, white value) or `{ "   detail", "value", color = "soft" }`.
+
+```lua
+PUI.AddTooltipLines(GameTooltip, lines)        -- add to a tooltip being built
+local panel = PUI.LinePanel(parent, { width = 250, lineHeight = 14 })
+panel:SetLines(lines)                          -- sizes itself; starts hidden
+```
+
+### Grid
+
+```lua
+local grid = PUI.Grid(window, { columns = { "Today", "7 days" }, rows = { "Sales", "Profit" },
+	labelWidth = 100, cellWidth = 115 })
+grid:SetPoint("TOPLEFT", window, "TOPLEFT", 18, -34)
+grid:Set(row, column, text)
+```
 
 ### Other widgets
 
@@ -113,5 +148,6 @@ Tooltip lines are strings (white, wrapped) or `{ text, color = key, wrap = false
 
 ## Adding to the library
 
-Add the widget here with shared methods, add tests in `tests/shared/PluvasUI/tests.lua`, run
+Add the widget to the file it belongs in (or a new file listed in `PluvasUI.xml`) with shared
+methods (`PUI.Mixin`), add tests in `tests/shared/PluvasUI/tests.lua`, run
 `npm run sync` and `npm test`. Check it in game: layout and looks are not covered by tests.

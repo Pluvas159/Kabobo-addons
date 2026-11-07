@@ -97,12 +97,7 @@ P.DEPOSIT = 100
 
 -- Item name from the item cache, or "item:<id>" while the client has not loaded it yet.
 function P.ItemName(itemID)
-	local getInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
-	local name
-	if getInfo then
-		local ok, n = pcall(getInfo, itemID)
-		if ok then name = n end
-	end
+	local name = ns.Try((C_Item and C_Item.GetItemInfo) or GetItemInfo, itemID)
 	return name or ("item:" .. tostring(itemID))
 end
 
@@ -114,7 +109,7 @@ function P.NetProceeds(unitPrice, count, deposit)
 	return gross, cut, gross - cut - (deposit or 0)
 end
 
--- Database ----------------------------------------------------------------
+-- History -----------------------------------------------------------------
 
 function P.DayIndex(t)
 	return floor(t / DAY)
@@ -212,11 +207,37 @@ function P.Prune(items, now, keepDays)
 	end
 end
 
--- Lookup used by tooltips and the UI.
+-- Saved data ----------------------------------------------------------------
+
+-- This realm/faction's price data, created on first use. Only call after login.
+function P:Realm()
+	local realm = ns.Ensure(ns.db.realms, ns.realmKey)
+	realm.items = realm.items or {}
+	realm.lastScan = realm.lastScan or 0
+	return realm
+end
+
+-- Entry for an item key, or nil. Read-only, for tooltips and other hot paths.
 function P:Get(key)
 	if not key or not ns.realmKey then return nil end
 	local realm = ns.db.realms[ns.realmKey]
-	return realm and realm.items[key]
+	return realm and realm.items and realm.items[key]
+end
+
+-- Number of items with price data, and time() of the last full scan (0 = never).
+function P:Summary()
+	local realm = ns.realmKey and ns.db.realms[ns.realmKey]
+	local count = 0
+	if realm and realm.items then
+		for _ in pairs(realm.items) do count = count + 1 end
+	end
+	return count, realm and realm.lastScan or 0
+end
+
+function P:Reset()
+	ns.db.realms[ns.realmKey] = nil
+	ns:Print("price data for " .. ns.realmKey .. " deleted.")
+	ns:Send("PricesChanged")
 end
 
 function P:OnLogin()

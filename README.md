@@ -42,10 +42,16 @@ npm test        # syntax-check every addon as Lua 5.1 and run its tests outside 
 npm run sync    # after editing shared/: copy the shared libraries into the addons
 ```
 
-All addons share one look through **PluvasUI**, a small UI library in
-[shared/PluvasUI](shared/PluvasUI) (style tokens, windows, lists, tabs, buttons, tooltips). Each
-addon embeds its own copy in `Libs/PluvasUI`, so every addon still installs on its own. Edit the
-library only in `shared/`, then run `npm run sync`.
+All addons are built on two small shared libraries:
+
+- **PluvasCore** ([shared/PluvasCore](shared/PluvasCore)): the runtime. Events and addon messages,
+  modules, saved variables with migrations, slash commands, error guards, and helpers for
+  reading game windows safely.
+- **PluvasUI** ([shared/PluvasUI](shared/PluvasUI)): one look. Style tokens, money formatting,
+  windows, lists, grids, tabs, buttons and tooltips.
+
+Each addon embeds its own copy in `Libs/`, so every addon still installs on its own. Edit the
+libraries only in `shared/`, then run `npm run sync`.
 
 Create a new addon with:
 

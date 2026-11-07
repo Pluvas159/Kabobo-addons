@@ -1,8 +1,8 @@
 // Copies shared libraries into the addons that embed them.
 //
-//   npm run sync                                   refresh every embedded copy
-//   node scripts/sync-shared.js --embed PluvasX    embed PluvasUI into an addon (and its TOC)
-//   node scripts/sync-shared.js --embed PluvasX OtherLib
+//   npm run sync                                          refresh every embedded copy
+//   node scripts/sync-shared.js --embed PluvasX           embed every shared library into an addon
+//   node scripts/sync-shared.js --embed PluvasX PluvasUI  embed only the named ones
 //
 // shared/<Lib>/ is the only place a library is edited. Each addon carries its own copy in
 // addons/<Name>/Libs/<Lib>/ so it still ships on its own; `npm test` fails when a copy differs.
@@ -15,9 +15,11 @@ const sharedDir = path.join(repo, "shared");
 const addonsDir = path.join(repo, "addons");
 const SHIPPED = /\.(lua|xml)$/i;
 
+// Load order: PluvasCore (the runtime) first, then the rest by name.
 const libs = fs.readdirSync(sharedDir, { withFileTypes: true })
   .filter((d) => d.isDirectory() && fs.existsSync(path.join(sharedDir, d.name, `${d.name}.xml`)))
-  .map((d) => d.name);
+  .map((d) => d.name)
+  .sort((a, b) => (a === "PluvasCore" ? -1 : b === "PluvasCore" ? 1 : a.localeCompare(b)));
 
 // Make dest hold exactly the shipped files of src. Returns the number of files changed.
 function mirror(src, dest) {
@@ -41,15 +43,19 @@ function mirror(src, dest) {
   return changed;
 }
 
-// Add "Libs\<Lib>\<Lib>.xml" to the TOC, before the first file line, if it is not there.
+// Add "Libs\<Lib>\<Lib>.xml" to the TOC if it is not there: after the libraries it already
+// loads, or else before the first file line. Embedding in `libs` order keeps PluvasCore first.
 function addToToc(addon, lib) {
   const tocPath = path.join(addonsDir, addon, `${addon}.toc`);
   const lines = fs.readFileSync(tocPath, "utf8").split("\n");
-  const entry = `Libs\\${lib}\\${lib}.xml`;
-  if (lines.some((l) => l.trim().replace(/\//g, "\\") === entry)) return false;
-  const first = lines.findIndex((l) => l.trim() && !l.trim().startsWith("#"));
-  if (first === -1) lines.push(entry);
-  else lines.splice(first, 0, entry);
+  const norm = (l) => l.trim().replace(/\//g, "\\");
+  const entry = ["Libs", lib, `${lib}.xml`].join("\\");
+  if (lines.some((l) => norm(l) === entry)) return false;
+  let at = -1;
+  lines.forEach((l, i) => { if (norm(l).startsWith("Libs\\")) at = i + 1; });
+  if (at === -1) at = lines.findIndex((l) => l.trim() && !l.trim().startsWith("#"));
+  if (at === -1) lines.push(entry);
+  else lines.splice(at, 0, entry);
   fs.writeFileSync(tocPath, lines.join("\n"));
   return true;
 }
@@ -57,18 +63,21 @@ function addToToc(addon, lib) {
 const args = process.argv.slice(2);
 if (args[0] === "--embed") {
   const addon = args[1];
-  const lib = args[2] || "PluvasUI";
+  const wanted = args.length > 2 ? args.slice(2) : libs;
   if (!addon || !fs.existsSync(path.join(addonsDir, addon, `${addon}.toc`))) {
     console.error(`no addon named ${addon}`);
     process.exit(1);
   }
-  if (!libs.includes(lib)) {
-    console.error(`no shared library named ${lib}`);
+  const unknown = wanted.filter((l) => !libs.includes(l));
+  if (unknown.length) {
+    console.error(`no shared library named ${unknown.join(", ")}`);
     process.exit(1);
   }
-  mirror(path.join(sharedDir, lib), path.join(addonsDir, addon, "Libs", lib));
-  const added = addToToc(addon, lib);
-  console.log(`${addon}: embedded ${lib}${added ? " and added it to the TOC" : ""}`);
+  for (const lib of libs.filter((l) => wanted.includes(l))) {
+    mirror(path.join(sharedDir, lib), path.join(addonsDir, addon, "Libs", lib));
+    const added = addToToc(addon, lib);
+    console.log(`${addon}: embedded ${lib}${added ? " and added it to the TOC" : ""}`);
+  }
 } else {
   let total = 0;
   for (const addon of fs.readdirSync(addonsDir)) {

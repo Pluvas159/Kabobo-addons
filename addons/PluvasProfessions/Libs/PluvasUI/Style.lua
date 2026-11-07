@@ -59,6 +59,17 @@ UI.Signature = {
 	lineHeight = 1,
 }
 
+-- Money (gold, silver, copper): Blizzard's coin colors and icons. Used by UI.Money/MoneyIcons.
+UI.Coins = {
+	colors = { "ffd700", "c7c7cf", "eda55f" },
+	letters = { "g", "s", "c" },
+	icons = {
+		"Interface\\MoneyFrame\\UI-GoldIcon",
+		"Interface\\MoneyFrame\\UI-SilverIcon",
+		"Interface\\MoneyFrame\\UI-CopperIcon",
+	},
+}
+
 UI.Textures = {
 	rowHighlight = "Interface\\QuestFrame\\UI-QuestTitleHighlight",
 	unknownIcon = "Interface\\Icons\\INV_Misc_QuestionMark",

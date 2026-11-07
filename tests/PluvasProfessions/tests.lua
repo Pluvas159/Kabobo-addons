@@ -1,6 +1,7 @@
 -- Pluvas' Professions: tests. See tests/lib/harness.lua for test/eq/near/truthy.
 local ns = _NS
-local D, T, R = ns.Data, ns.Trainer, ns.Recipes
+local D, T, R, Rows = ns.Data, ns.Trainer, ns.Recipes, ns.Rows
+local PUI = ns.PluvasUI
 
 -- Client stand-ins this addon needs. Kept here because only this addon uses them.
 local professions = { { "Tailoring", 75, 150, 197 }, { "Cooking", 10, 75, 185 } }
@@ -41,42 +42,36 @@ test("key is lowercase and trimmed", function()
 end)
 
 test("strip codes removes colors and textures", function()
-	eq(D.StripCodes("|cFFFFD200Vendor: |rBob|nZone: X|TInterface\\Icons\\a:0|t"), "Vendor: Bob\nZone: X")
+	eq(Rows.StripCodes("|cFFFFD200Vendor: |rBob|nZone: X|TInterface\\Icons\\a:0|t"), "Vendor: Bob\nZone: X")
 end)
 
 test("source label from Blizzard source text", function()
-	local label, plain = D.ParseSource("|cFFFFD200Vendor: |rGeorgio Bolero|n|cFFFFD200Zone: |rStormwind City")
+	local label, plain = Rows.ParseSource("|cFFFFD200Vendor: |rGeorgio Bolero|n|cFFFFD200Zone: |rStormwind City")
 	eq(label, "Vendor")
 	eq(plain, "Vendor: Georgio Bolero\nZone: Stormwind City")
 end)
 
 test("source label without a colon is the whole first line", function()
-	eq((D.ParseSource("|cFFFFD200Trainer|r")), "Trainer")
-	eq((D.ParseSource("Discovery")), "Discovery")
+	eq((Rows.ParseSource("|cFFFFD200Trainer|r")), "Trainer")
+	eq((Rows.ParseSource("Discovery")), "Discovery")
 end)
 
 test("empty or missing source text has no label", function()
-	eq((D.ParseSource(nil)), nil)
-	eq((D.ParseSource("  ")), nil)
+	eq((Rows.ParseSource(nil)), nil)
+	eq((Rows.ParseSource("  ")), nil)
 end)
 
 test("source groups", function()
-	eq((D.SourceGroup("Trainer")), "trainer")
-	eq((D.SourceGroup("Vendor")), "vendor")
-	eq((D.SourceGroup("World Drop")), "drop")
-	eq((D.SourceGroup("Quest")), "quest")
-	local key, order, text = D.SourceGroup("Fishing")
+	eq((Rows.SourceGroup("Trainer")), "trainer")
+	eq((Rows.SourceGroup("Vendor")), "vendor")
+	eq((Rows.SourceGroup("World Drop")), "drop")
+	eq((Rows.SourceGroup("Quest")), "quest")
+	local key, order, text = Rows.SourceGroup("Fishing")
 	eq(key, "other:fishing"); eq(text, "Fishing")
-	truthy(order > select(2, D.SourceGroup("Discovery")), "other sorts after known groups")
-	local ukey, uorder = D.SourceGroup(nil)
+	truthy(order > select(2, Rows.SourceGroup("Discovery")), "other sorts after known groups")
+	local ukey, uorder = Rows.SourceGroup(nil)
 	eq(ukey, "unknown")
 	truthy(uorder > order, "unknown sorts last")
-end)
-
-test("money", function()
-	eq(D.Money(0), "0|cffeda55fc|r")
-	eq(D.Money(10203), "1|cffffd700g|r 2|cffc7c7cfs|r 3|cffeda55fc|r")
-	eq(D.Money(5000), "50|cffc7c7cfs|r")
 end)
 
 -- Trainer service info
@@ -116,7 +111,7 @@ test("rows: grouped by source, trainer recipes by skill", function()
 		["red linen robe"] = { n = "Red Linen Robe", s = 70, c = 200 },
 		["brown linen pants"] = { n = "Brown Linen Pants", s = 30 },
 	}
-	local rows, summary = D.BuildRows(prof, catalog, { level = 20 })
+	local rows, summary = Rows.Build(prof, catalog, { level = 20 })
 	eq(rowNames(rows), "[Trainer],Brown Linen Pants,Red Linen Robe,[Vendor],Blue Linen Vest,[Drop],Azure Silk Hood,[No source info],Mystery Shirt")
 	eq(summary.total, 5)
 	eq(summary.learnable, 2)
@@ -132,7 +127,7 @@ test("rows: learnable needs skill and level", function()
 	local catalog = {
 		low = { s = 25 }, ["high skill"] = { s = 100 }, ["high level"] = { s = 1, lv = 30 },
 	}
-	local rows = D.BuildRows(prof, catalog, { level = 20 })
+	local rows = Rows.Build(prof, catalog, { level = 20 })
 	local by = {}
 	for _, r in ipairs(rows) do if not r.header then by[r.name] = r.learnable end end
 	eq(by["Low"], true)
@@ -142,7 +137,7 @@ end)
 
 test("rows: a recipe with no source text but trainer data counts as a trainer recipe", function()
 	local prof = { skill = 10, u = { [1] = { n = "Linen Bag" } }, tu = {} }
-	local rows = D.BuildRows(prof, { ["linen bag"] = { s = 45 } }, {})
+	local rows = Rows.Build(prof, { ["linen bag"] = { s = 45 } }, {})
 	eq(rowNames(rows), "[Trainer],Linen Bag")
 	eq(rows[2].learnable, false)
 end)
@@ -154,20 +149,20 @@ test("rows: trainer-only recipes fill in, without duplicates", function()
 		["linen bag"] = { n = "Linen Bag", s = 45 },
 		["heavy linen gloves"] = { n = "Heavy Linen Gloves", s = 35, ic = 132149 },
 	}
-	local rows = D.BuildRows(prof, catalog, { level = 20 })
+	local rows = Rows.Build(prof, catalog, { level = 20 })
 	eq(rowNames(rows), "[Trainer],Heavy Linen Gloves,Linen Bag")
 	eq(rows[2].icon, 132149)
 end)
 
 test("rows: hide unknown sources", function()
 	local prof = { u = { [1] = { n = "A" }, [2] = { n = "B", s = "Quest" } }, tu = {} }
-	eq(rowNames((D.BuildRows(prof, nil, { hideUnknown = true }))), "[Quest],B")
+	eq(rowNames((Rows.Build(prof, nil, { hideUnknown = true }))), "[Quest],B")
 end)
 
 test("rows: a collapsed group keeps its header and count but hides its recipes", function()
 	local prof = { skill = 50, u = { [1] = { n = "A" }, [2] = { n = "B" }, [3] = { n = "C", s = "Trainer" } }, tu = {} }
 	local catalog = { c = { s = 10 } }
-	local rows, summary = D.BuildRows(prof, catalog, { collapsed = { unknown = true, trainer = false } })
+	local rows, summary = Rows.Build(prof, catalog, { collapsed = { unknown = true, trainer = false } })
 	eq(rowNames(rows), "[Trainer],C,[No source info]")
 	eq(rows[3].collapsed, true)
 	eq(rows[3].count, 2)
@@ -187,14 +182,14 @@ end)
 test("rows: a vendor seen selling the recipe is its source", function()
 	local prof = { u = { [1] = { n = "Blue Linen Vest" }, [2] = { n = "Mystery Shirt" } }, tu = {} }
 	local vendors = { ["blue linen vest"] = { v = "Bob", c = 500 } }
-	local rows = D.BuildRows(prof, nil, { vendors = vendors })
+	local rows = Rows.Build(prof, nil, { vendors = vendors })
 	eq(rowNames(rows), "[Vendor],Blue Linen Vest,[No source info],Mystery Shirt")
 	eq(rows[2].vendor.v, "Bob")
 end)
 
 test("rows: same-named recipes (one per faction) are shown once", function()
 	local prof = { u = { [20] = { n = "Faction Banner" }, [10] = { n = "Faction Banner" } }, tu = {} }
-	local rows = D.BuildRows(prof, nil, {})
+	local rows = Rows.Build(prof, nil, {})
 	eq(rowNames(rows), "[No source info],Faction Banner")
 	eq(rows[2].id, 10)
 end)
@@ -204,7 +199,7 @@ test("rows: recipes without a requirement sort by the skill where they turn grey
 		[1] = { n = "Loom", g = 300 }, [2] = { n = "Spinning Wheel", g = 145 },
 		[3] = { n = "Odd One" }, [4] = { n = "Another", g = 145 },
 	}, tu = {} }
-	eq(rowNames((D.BuildRows(prof, nil, {}))), "[No source info],Another,Spinning Wheel,Loom,Odd One")
+	eq(rowNames((Rows.Build(prof, nil, {}))), "[No source info],Another,Spinning Wheel,Loom,Odd One")
 end)
 
 -- Vendors
@@ -261,7 +256,7 @@ test("no merchant reads after the vendor window closes", function()
 end)
 
 test("rows: nothing to show", function()
-	local rows, summary = D.BuildRows(nil, nil, nil)
+	local rows, summary = Rows.Build(nil, nil, nil)
 	eq(#rows, 0); eq(summary.total, 0)
 end)
 

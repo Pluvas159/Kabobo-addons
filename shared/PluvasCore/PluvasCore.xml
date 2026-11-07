@@ -1,0 +1,7 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+	<!-- PluvasCore: load order. Edit in shared/PluvasCore, then run npm run sync. -->
+	<Script file="Core.lua"/>
+	<Script file="Util.lua"/>
+	<Script file="Tasks.lua"/>
+	<Script file="Slash.lua"/>
+</Ui>

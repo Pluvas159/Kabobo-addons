@@ -43,23 +43,34 @@ Data is kept per realm (ruleset) and faction in the `PluvasAuctionsDB` saved var
 | `/pa` | Open or close the ledger window |
 | `/pa scan` | Full AH scan (AH must be open) |
 | `/pa price <item link>` | Print stored prices for an item |
-| `/pa tooltip` | Turn the tooltip lines on or off |
+| `/pa tooltip` | Turn all tooltip lines on or off |
+| `/pa history` | The 14-day average in tooltips (on/off) |
+| `/pa sold` | Your average sale price in tooltips (on/off) |
+| `/pa craft` | Mats cost in tooltips of items you can craft (on/off) |
+| `/pa mats` | The list of base mats under the mats cost (on/off) |
+| `/pa panel` | Mats cost and profit in the profession window (on/off) |
 | `/pa resetprices` | Delete price data for this realm/faction |
 | `/pa resetledger` | Delete the sales history for this realm/faction |
+| `/pa help` | List the commands and the state of each setting |
 
 ## Files
 
+Data modules read, store and compute. UI modules only draw, and they refresh when a data module
+sends an addon message (`PricesChanged`, `ScanStateChanged`, `LedgerChanged`). The runtime comes from
+`Libs/PluvasCore`, the look from `Libs/PluvasUI`.
+
 | File | Role |
 | --- | --- |
-| `Core.lua` | Namespace, events, saved variables, slash commands |
-| `Crafting.lua` | Reads your recipes from the profession window, works out mats cost |
-| `ProfessionsUI.lua` | Mats cost and profit panel in the profession window |
-| `Util.lua` | Money, time and string formatting |
+| `Core.lua` | Saved variables and slash commands |
 | `Pricing.lua` | Item keys, market value statistics, price database and history |
 | `Scanner.lua` | Full scan (`ReplicateItems`) and passive capture from browse and search results |
 | `Ledger.lua` | Reading auction mail, merging transactions, summaries, gold tracking |
-| `Tooltip.lua` | Tooltip lines and `/pa price` |
-| `UI.lua` | Ledger window and the scan button on the auction house frame |
+| `Crafting.lua` | Reads your recipes from the profession window, works out mats cost |
+| `Lines.lua` | The label/value lines shown in tooltips and the profession window |
+| `Tooltip.lua` | Tooltip hook and `/pa price` |
+| `CraftPanel.lua` | Mats cost and profit panel in the profession window |
+| `LedgerWindow.lua` | The ledger window |
+| `ScanButton.lua` | The full scan button on the auction house frame |
 
 ## Known limits
 
@@ -68,6 +79,14 @@ Data is kept per realm (ruleset) and faction in the `PluvasAuctionsDB` saved var
 
 ## Changelog
 
+- **Unreleased**: rebuilt on the shared PluvasCore runtime.
+  - New slash toggles for every tooltip and panel setting (`/pa history`, `sold`, `craft`, `mats`,
+    `panel`).
+  - Tooltips no longer scan the whole sales history on every hover.
+  - Reading new auction mail no longer compares it with every past transaction.
+  - A profession window closed mid-read no longer keeps being read.
+  - Errors in the mail capture hooks are contained.
+  - The tooltip and the profession panel now share their lines, so they always match.
 - **0.1.1**: tooltip prices use gold, silver and copper coin icons. Tooltips show the stack's
   total market value and the amount left after the AH cut and deposit. Tooltips show the AH cost of
   mats for items you can craft, pricing craftable mats from their own mats. The profession

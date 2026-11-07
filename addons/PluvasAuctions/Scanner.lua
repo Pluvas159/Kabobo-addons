@@ -1,9 +1,12 @@
 -- Pluvas' Auctions: auction house scanning.
 --
--- Full scan: C_AuctionHouse.ReplicateItems() returns every auction at once. The Forever
--- server allows this once per account every 15 minutes, so the time is saved account-wide.
--- Passive capture: anything you browse or search in the normal AH window is recorded too,
--- so prices stay fresh between full scans.
+-- Full scan: C_AuctionHouse.ReplicateItems() returns every auction at once. The Forever server
+-- allows this once per account every 15 minutes, so the time is saved account-wide.
+-- Passive capture: anything you browse or search in the normal AH window is recorded too, so
+-- prices stay fresh between full scans.
+--
+-- C_AuctionHouse is only called while the auction house is open. Sends ScanStateChanged when
+-- the state, the progress or the AH's open state changes, and PricesChanged after a full scan.
 local _, ns = ...
 local S = ns:NewModule("Scanner")
 local P = ns.Pricing
@@ -16,27 +19,17 @@ S.TIMEOUT = 120          -- seconds to wait for the server to answer at all
 S.state = "idle"         -- idle | waiting | processing
 S.progress = 0
 
-local ahOpen = false
+local ah = ns:Session("AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED")
 local settleTimer, timeoutTimer
 local lastCount = -1
-local listeners = {}
-
-function S:OnStateChanged(fn)
-	listeners[#listeners + 1] = fn
-end
-
-local function notify()
-	for i = 1, #listeners do listeners[i](S.state, S.progress) end
-end
 
 local function setState(state, progress)
-	S.state = state
-	S.progress = progress or 0
-	notify()
+	S.state, S.progress = state, progress or 0
+	ns:Send("ScanStateChanged", S.state, S.progress)
 end
 
 function S:IsOpen()
-	return ahOpen
+	return ah.open
 end
 
 function S:CooldownRemaining()
@@ -51,39 +44,69 @@ end
 
 -- Full scan ---------------------------------------------------------------
 
-function S:FullScan()
-	if not ahOpen then
-		ns:Print("open the auction house first.")
-		return
-	end
-	if S.state ~= "idle" then
-		ns:Print("a scan is already running.")
-		return
-	end
-	local remaining = S:CooldownRemaining()
-	if remaining > 0 then
-		ns:Print("the server allows one full scan every 15 minutes. Next scan in " .. ns.Clock(remaining) .. ".")
-		return
-	end
-
-	lastCount = -1
-	setState("waiting")
-	ns.db.account.lastReplicate = time()
-	C_AuctionHouse.ReplicateItems()
-	ns:Print("full scan requested, waiting for the auction house...")
-
-	timeoutTimer = C_Timer.NewTimer(S.TIMEOUT, function()
-		timeoutTimer = nil
-		if S.state == "waiting" then
-			cancelTimers()
-			setState("idle")
-			ns:Print("the auction house did not answer the full scan. Try again later.")
-		end
-	end)
+-- Turns one replicate row into (itemKey, unit price, quantity), or nil for rows without a
+-- buyout or item data. Replicate buyouts are for the whole stack.
+local function readRow(index)
+	local _, _, qty, _, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID = C_AuctionHouse.GetReplicateItemInfo(index)
+	if not (itemID and qty and qty > 0 and buyout and buyout > 0) then return nil end
+	local link = C_AuctionHouse.GetReplicateItemLink(index)
+	return (link and P.ItemKeyFromLink(link)) or P.ItemKey(itemID), buyout / qty, qty
 end
 
-local process
+-- Reads every row over several frames, then records one entry per item.
+local function process(count)
+	cancelTimers()
+	setState("processing", 0)
+	local started = debugprofilestop and debugprofilestop() or 0
+	local grouped = {}   -- itemKey -> { { unit, qty }, ... }
+	local seen, skipped = 0, 0
 
+	ns:Spread({
+		name = "Full scan",
+		count = count,
+		size = S.CHUNK,
+		alive = function() return ah.open end,
+		step = function(i)
+			local key, unit, qty = readRow(i - 1)   -- replicate rows start at 0
+			if not key then
+				skipped = skipped + 1
+				return
+			end
+			local list = grouped[key]
+			if not list then
+				list = {}
+				grouped[key] = list
+			end
+			list[#list + 1] = { unit, qty }
+			seen = seen + 1
+		end,
+		progress = function(done, total) setState("processing", done / total) end,
+		done = function(ok, err)
+			if not ok then
+				setState("idle")
+				ns:Print(err and "the full scan failed; nothing was saved."
+					or "auction house closed during the scan, results discarded.")
+				return
+			end
+			local now, realm, items = time(), P:Realm(), 0
+			for key, listings in pairs(grouped) do
+				local stats = P.ComputeStats(listings)
+				if stats then
+					P.Record(realm.items, key, stats, now)
+					items = items + 1
+				end
+			end
+			realm.lastScan = now
+			local elapsed = debugprofilestop and (debugprofilestop() - started) / 1000 or 0
+			setState("idle")
+			ns:Send("PricesChanged")
+			ns:Print(string.format("full scan done: %d auctions, %d items priced in %.1fs.", seen, items, elapsed))
+			if skipped > 0 then ns:Debug(skipped .. " auctions had no buyout or no item data") end
+		end,
+	})
+end
+
+-- The result is complete once the row count stops changing for S.SETTLE seconds.
 local function checkSettled()
 	settleTimer = nil
 	if S.state ~= "waiting" then return end
@@ -96,77 +119,43 @@ local function checkSettled()
 	end
 end
 
+function S:FullScan()
+	if not ah.open then
+		ns:Print("open the auction house first.")
+		return
+	end
+	if S.state ~= "idle" then
+		ns:Print("a scan is already running.")
+		return
+	end
+	local remaining = S:CooldownRemaining()
+	if remaining > 0 then
+		ns:Print("the server allows one full scan every 15 minutes. Next scan in "
+			.. ns.PluvasUI.Clock(remaining) .. ".")
+		return
+	end
+
+	lastCount = -1
+	setState("waiting")
+	ns.db.account.lastReplicate = time()
+	C_AuctionHouse.ReplicateItems()
+	ns:Print("full scan requested, waiting for the auction house...")
+
+	timeoutTimer = C_Timer.NewTimer(S.TIMEOUT, function()
+		timeoutTimer = nil
+		if S.state ~= "waiting" then return end
+		cancelTimers()
+		setState("idle")
+		ns:Print("the auction house did not answer the full scan. Try again later.")
+	end)
+end
+
 ns:On("REPLICATE_ITEM_LIST_UPDATE", function()
 	if S.state ~= "waiting" then return end
 	lastCount = C_AuctionHouse.GetNumReplicateItems() or 0
 	if settleTimer then settleTimer:Cancel() end
 	settleTimer = C_Timer.NewTimer(S.SETTLE, checkSettled)
 end)
-
-process = function(count)
-	cancelTimers()
-	setState("processing", 0)
-
-	local started = debugprofilestop and debugprofilestop() or 0
-	local grouped = {}       -- itemKey -> { {unit, qty}, ... }
-	local seen, skipped = 0, 0
-	local index = 0
-
-	local function finish()
-		local now = time()
-		local realm = ns:RealmData()
-		local items = 0
-		for key, listings in pairs(grouped) do
-			local stats = P.ComputeStats(listings)
-			if stats then
-				P.Record(realm.items, key, stats, now)
-				items = items + 1
-			end
-		end
-		realm.lastScan = now
-		local elapsed = debugprofilestop and (debugprofilestop() - started) / 1000 or 0
-		setState("idle")
-		ns:Print(string.format("full scan done: %d auctions, %d items priced in %.1fs.", seen, items, elapsed))
-		if skipped > 0 then
-			ns:Debug(skipped .. " auctions had no buyout or no item data")
-		end
-	end
-
-	local function step()
-		if not ahOpen then
-			setState("idle")
-			ns:Print("auction house closed during the scan, results discarded.")
-			return
-		end
-		local last = math.min(index + S.CHUNK, count) - 1
-		for i = index, last do
-			local _, _, qty, _, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID = C_AuctionHouse.GetReplicateItemInfo(i)
-			if itemID and qty and qty > 0 and buyout and buyout > 0 then
-				local link = C_AuctionHouse.GetReplicateItemLink(i)
-				local key = (link and P.ItemKeyFromLink(link)) or P.ItemKey(itemID)
-				local list = grouped[key]
-				if not list then
-					list = {}
-					grouped[key] = list
-				end
-				-- Replicate buyouts are for the whole stack.
-				list[#list + 1] = { buyout / qty, qty }
-				seen = seen + 1
-			else
-				skipped = skipped + 1
-			end
-		end
-		index = last + 1
-		if index < count then
-			setState("processing", index / count)
-			C_Timer.After(0, step)
-		else
-			finish()
-		end
-	end
-
-	step()
-end
 
 -- Passive capture ---------------------------------------------------------
 
@@ -179,7 +168,7 @@ end
 ns:On("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", function()
 	local results = C_AuctionHouse.GetBrowseResults()
 	if not results then return end
-	local items, now = ns:RealmData().items, time()
+	local items, now = P:Realm().items, time()
 	for _, r in ipairs(results) do
 		local key = keyFromItemKey(r.itemKey)
 		if key and r.minPrice and r.minPrice > 0 then
@@ -199,7 +188,7 @@ ns:On("COMMODITY_SEARCH_RESULTS_UPDATED", function(itemID)
 		end
 	end
 	local stats = P.ComputeStats(listings)
-	if stats then P.Record(ns:RealmData().items, P.ItemKey(itemID), stats, time()) end
+	if stats then P.Record(P:Realm().items, P.ItemKey(itemID), stats, time()) end
 end)
 
 ns:On("ITEM_SEARCH_RESULTS_UPDATED", function(itemKey)
@@ -214,22 +203,17 @@ ns:On("ITEM_SEARCH_RESULTS_UPDATED", function(itemKey)
 	end
 	local stats = P.ComputeStats(listings)
 	local key = keyFromItemKey(itemKey)
-	if stats and key then P.Record(ns:RealmData().items, key, stats, time()) end
+	if stats and key then P.Record(P:Realm().items, key, stats, time()) end
 end)
 
 -- AH open/close -----------------------------------------------------------
 
 ns:On("AUCTION_HOUSE_SHOW", function()
-	ahOpen = true
-	notify()
+	setState(S.state, S.progress)
 end)
 
 ns:On("AUCTION_HOUSE_CLOSED", function()
-	ahOpen = false
-	if S.state == "waiting" then
-		cancelTimers()
-		setState("idle")
-	else
-		notify()
-	end
+	if S.state == "waiting" then cancelTimers() end
+	-- A processing scan notices the closed AH before its next batch and reports it.
+	setState(S.state == "waiting" and "idle" or S.state, S.progress)
 end)
