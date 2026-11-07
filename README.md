@@ -7,6 +7,7 @@ World of Warcraft addons for **World of Warcraft: Forever**, kept together in on
 | Addon | Description |
 | --- | --- |
 | [Pluvas' Auctions](addons/PluvasAuctions) | Auction house price scanning, price history in tooltips, and a sales, profit and gold ledger |
+| [Pluvas' Professions](addons/PluvasProfessions) | Lists the recipes you have not learned yet and where to learn them (trainer, vendor, drop, quest) |
 
 ## Install into the game
 

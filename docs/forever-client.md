@@ -90,6 +90,70 @@ Forever uses the **modern auction house** (`C_AuctionHouse`), with item and comm
 - Not confirmed: whether `GetBaseProfessionInfo().professionID` equals the skill line from
   `GetProfessionInfo`, so profession pruning matches on name as well.
 
+### Read from Blizzard's Forever UI source
+
+Blizzard's UI code for Forever is mirrored in the `forever` branch of
+[Gethe/wow-ui-source](https://github.com/Gethe/wow-ui-source/tree/forever). Forever's internal
+game type is **`camelot`**: files under `Camelot/` folders (and `[AllowLoadGameType camelot]` TOC
+lines) override the Mainline UI. The facts below were read there in November 2026 and have not
+yet been checked in game.
+
+- **The profession window hides unlearned recipes on purpose.**
+  `Blizzard_ProfessionsTemplates/Camelot/Blizzard_Professions.lua` removes the Learned/Unlearned
+  and Sources entries from the filter menu, and wraps `Professions.GenerateCraftingDataProvider`
+  to call `C_TradeSkillUI.SetShowUnlearned(false)` after *every* list build. Do not flip
+  `SetShowUnlearned` to get them back: Blizzard resets it on each rebuild, and fighting that can
+  cause a rebuild loop. Pluvas' Professions reads the recipe IDs itself and shows its own panel.
+- Blizzard's recipe list uses `C_TradeSkillUI.GetFilteredRecipeIDs()`, which follows those filters.
+  For unlearned recipes the schematic form calls `C_TradeSkillUI.GetRecipeSourceText(recipeID)`,
+  which returns text like `|cFFFFD200Vendor: |rName|n|cFFFFD200Zone: |r...`.
+- **The generated API docs are incomplete**: `GetFilteredRecipeIDs`, `GetRecipeSourceText` and
+  `GetAllRecipeIDs` are missing from `TradeSkillUIDocumentation.lua`, but Blizzard's own code calls
+  the first two. A function missing from the docs is not proof it is missing from the client.
+- `TradeSkillRecipeInfo` fields include `name`, `learned`, `icon`, `categoryID`, `sourceType`,
+  `hyperlink`, `isDummyRecipe`. It has no field for the skill needed to learn a recipe.
+- **Confirmed in game (2026-11-07, build 70862, `/pprof dump` on Tailoring):**
+  - `GetAllRecipeIDs()` exists and includes unlearned recipes: 429 unlearned for Tailoring.
+  - `GetRecipeSourceText(id)` returns `nil` for unlearned recipes, and `GetRecipeInfo` has **no
+    `sourceType` field** at all. Forever has no recipe source data, so sources must be learned
+    from trainers and vendors the player visits.
+  - `maxTrivialLevel` is filled (the skill where the recipe turns grey, e.g. Spinning Wheel 145).
+  - The same recipe name can exist under several IDs (likely one per faction): Faction Banner was
+    learned under one ID and unlearned under another (1263425). Match recipes by name.
+  - Forever-only recipes have IDs around 1263000 (Loom 1263080, Spinning Wheel 1263032). The list
+    also holds recipes that may not be obtainable yet.
+- Merchant: `GetMerchantNumItems()`, `GetMerchantItemLink(i)` and `C_MerchantFrame.GetItemInfo(i)`
+  (`name, price, hasExtendedCost, numAvailable, ...`), between `MERCHANT_SHOW` and `MERCHANT_CLOSED`.
+  Recipe items are item class 9 (`Enum.ItemClass.Recipe`); subclass 0 is books. From the forever
+  branch source, not yet checked in game.
+- `NEW_RECIPE_LEARNED(recipeID, recipeLevel, baseRecipeID)` fires when a recipe is learned.
+- `ProfessionsFrame` on Forever has a book (overview) page. Closing a trade skill while the book
+  page is open does not hide the frame, so follow the frame's `OnShow`/`OnHide` rather than
+  `TRADE_SKILL_SHOW`/`TRADE_SKILL_CLOSE`.
+
+## Trainers
+
+Read from `Blizzard_TrainerUI/Mainline/Blizzard_TrainerUI.lua` on the `forever` branch (see
+above). Not yet checked in game.
+
+- Events: `TRAINER_SHOW`, `TRAINER_UPDATE`, `TRAINER_CLOSED`, `TRAINER_DESCRIPTION_UPDATE`,
+  `TRAINER_SERVICE_INFO_NAME_UPDATE`. The frame is `ClassTrainerFrame` (load-on-demand
+  `Blizzard_TrainerUI`) and is used for profession trainers too. `IsTradeskillTrainer()` tells
+  them apart.
+- **`GetTrainerServiceInfo(i)` returns `name, serviceType, texture, reqLevel, subText, category`.**
+  This differs from the wiki (`name, rank, category, expanded`). `serviceType` is `"available"`,
+  `"unavailable"` or `"used"`, and `category` groups services when "Categorize" is on
+  (`C_Trainer.GetCategorizeTrainerUI()`).
+- `GetTrainerServiceSkillReq(i)` returns `skillName, skillRank, hasReq`, and **`hasReq` is true
+  when the requirement is met** (Blizzard colors it red otherwise). The wiki says the opposite.
+- `GetTrainerServiceCost(i)` returns `moneyCost, isProfession`. `GetTrainerServiceSkillLine(i)`
+  gives the profession name.
+- The client only lists services that the filter lets through:
+  `GetTrainerServiceTypeFilter(type)` / `SetTrainerServiceTypeFilter(type, bool)` with `type`
+  `"available"`, `"unavailable"`, `"used"`. Blizzard saves these filters only for the `classic`
+  game type (`TRAINER_FILTER_*_BOOL` in the TOC), so on Forever they probably reset every session.
+- `BuyTrainerService(i)` is what the Train button calls. Never automate it.
+
 ## Mail
 
 - The server loads 50 mails at a time.

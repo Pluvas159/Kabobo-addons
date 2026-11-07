@@ -10,6 +10,7 @@ written by Pluvas. Each addon is self-contained and ships on its own.
 | Addon | Folder | What it does |
 | --- | --- | --- |
 | Pluvas' Auctions | `addons/PluvasAuctions` | AH price scanning and history in tooltips, plus a sales, profit and gold ledger |
+| Pluvas' Professions | `addons/PluvasProfessions` | Lists unlearned recipes and where to learn them, beside the profession window and from trainers |
 
 Add new addons to this table.
 
