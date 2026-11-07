@@ -13,7 +13,8 @@ local PUI = ns.KaboboUI
 local S = PUI.Sizes
 local Money, Signed = PUI.Money, PUI.SignedMoney
 
-local WIDTH, HEIGHT = 720, 470
+-- The columns plus the list's 6 px gaps (706) fit the content width (WIDTH - 2 x 18 = 724).
+local WIDTH, HEIGHT = 760, 470
 local ROWS = 17
 local LIST_COLUMNS = {
 	{ width = 200 }, { width = 90, justify = "RIGHT" }, { width = 90, justify = "RIGHT" },
@@ -93,8 +94,7 @@ local function build()
 	window.list:SetHeight((ROWS + 1) * S.row)
 	window.list:SetHeaders("Item", "Mats cost", "After cut", "Profit", "Gone/day", "You sold", "Listed")
 
-	window:Footer():SetText("Per craft. Gone/day: left the AH between two scans (sold, expired or cancelled). "
-		.. "You sold: 30 days. Click a recipe to shop.")
+	window:Footer():SetText("Per craft. Gone/day: left the AH between two scans, incl. expired. Click a recipe to shop.")
 end
 
 local function shown()

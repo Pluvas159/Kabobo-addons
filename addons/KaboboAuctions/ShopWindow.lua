@@ -12,11 +12,12 @@ local SH, P, C = ns.Shopping, ns.Pricing, ns.Crafting
 local PUI = ns.KaboboUI
 local S = PUI.Sizes
 
-local WIDTH, HEIGHT = 470, 520
+-- The columns plus the list's 6 px gaps (470) fit the content width (WIDTH - 2 x 18 = 504).
+local WIDTH, HEIGHT = 540, 520
 local ROWS = 14
 local LIST_COLUMNS = {
-	{ width = 150 }, { width = 40, justify = "RIGHT" }, { width = 40, justify = "RIGHT" },
-	{ width = 50, justify = "RIGHT" }, { width = 50, justify = "RIGHT" }, { width = 100, justify = "RIGHT" },
+	{ width = 170 }, { width = 40, justify = "RIGHT" }, { width = 40, justify = "RIGHT" },
+	{ width = 50, justify = "RIGHT" }, { width = 50, justify = "RIGHT" }, { width = 90, justify = "RIGHT" },
 }
 
 local window
@@ -137,7 +138,7 @@ local function build()
 	})
 	window.skipButton:SetPoint("LEFT", window.buyButton, "RIGHT", 12, 0)
 
-	window:Footer():SetText("Buy Now and Create stay the game's buttons. Click a row to pick it. Cap: /ka buycap")
+	window:Footer():SetText("You buy and craft with the game's buttons. Click a row to pick it.")
 end
 
 local function shown()
