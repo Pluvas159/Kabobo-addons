@@ -1,0 +1,16 @@
+## Interface: 16001
+## Title: Pluvas' Auctions
+## Notes: Auction house price scanning, price history in tooltips, and sales & profit tracking for World of Warcraft: Forever.
+## Author: Pluvas
+## Version: 0.1.0
+## Category: Auction & Economy
+## IconTexture: Interface\Icons\INV_Misc_Coin_02
+## SavedVariables: PluvasAuctionsDB
+
+Core.lua
+Util.lua
+Pricing.lua
+Scanner.lua
+Ledger.lua
+Tooltip.lua
+UI.lua
