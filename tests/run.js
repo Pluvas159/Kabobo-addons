@@ -4,6 +4,7 @@
 //   npm test -- PluvasAuctions  only the named addon(s)
 //
 // For each addon in addons/<Name>/<Name>.toc:
+//   0. the TOC is checked for the shared metadata (Category "Pluvas' addons", Interface 16001, ...)
 //   1. every .lua file listed in the TOC is syntax-checked as Lua 5.1 (the game's dialect)
 //   2. a fresh Lua VM (fengari) loads tests/lib/mocks.lua and tests/lib/harness.lua, then the
 //      addon's files in TOC order with the usual (addonName, namespace) arguments
@@ -25,6 +26,29 @@ function tocFiles(addon) {
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith("#"))
     .map((l) => l.replace(/\\/g, "/"));
+}
+
+// Every addon must carry the same metadata so it targets Forever and shows up under the
+// "Pluvas' addons" header in the in-game AddOns list.
+const CATEGORY = "Pluvas' addons";
+const FOREVER_INTERFACE = "16001";
+
+function tocCheck(addon) {
+  const text = fs.readFileSync(path.join(addonsDir, addon, `${addon}.toc`), "utf8");
+  const meta = {};
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(/^##\s*([\w-]+)\s*:\s*(.*?)\s*$/);
+    if (m && !(m[1] in meta)) meta[m[1]] = m[2];
+  }
+  const problems = [];
+  if (meta.Category !== CATEGORY) problems.push(`## Category must be "${CATEGORY}" (is ${JSON.stringify(meta.Category)})`);
+  const interfaces = (meta.Interface || "").split(",").map((s) => s.trim());
+  if (!interfaces.includes(FOREVER_INTERFACE)) problems.push(`## Interface must include ${FOREVER_INTERFACE}`);
+  for (const key of ["Title", "Notes", "Author", "Version"]) {
+    if (!meta[key]) problems.push(`## ${key} is missing`);
+  }
+  for (const p of problems) console.error(`  ${addon}.toc: ${p}`);
+  return problems.length === 0;
 }
 
 function syntaxCheck(addon, files) {
@@ -81,13 +105,14 @@ if (addons.length === 0) {
 
 let totalPassed = 0;
 let totalFailed = 0;
-let broken = false;
+let broken = 0;
 
 for (const addon of addons) {
   console.log(addon);
   const files = tocFiles(addon);
-  if (!syntaxCheck(addon, files)) {
-    broken = true;
+  const tocOk = tocCheck(addon);
+  if (!syntaxCheck(addon, files) || !tocOk) {
+    broken++;
     continue;
   }
 
@@ -111,7 +136,7 @@ for (const addon of addons) {
     for (const t of tests) run(L, path.join(testDir, t));
   } catch (e) {
     console.error(`  error: ${e.message}`);
-    broken = true;
+    broken++;
     continue;
   }
 
@@ -122,5 +147,6 @@ for (const addon of addons) {
   console.log(`  ${files.length} files ok, ${r.passed} passed, ${r.failed} failed${note}`);
 }
 
-console.log(`\n${addons.length} addon(s): ${totalPassed} passed, ${totalFailed} failed`);
+const brokenNote = broken ? `, ${broken} addon(s) BROKEN (see errors above)` : "";
+console.log(`\n${addons.length} addon(s): ${totalPassed} passed, ${totalFailed} failed${brokenNote}`);
 if (broken || totalFailed > 0) process.exit(1);

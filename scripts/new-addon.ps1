@@ -32,6 +32,8 @@ Write-File (Join-Path $addonDir "$Name.toc") @"
 ## Notes: $Notes
 ## Author: Pluvas
 ## Version: 0.1.0
+## Category: Pluvas' addons
+## IconTexture: Interface\Icons\INV_Misc_QuestionMark
 ## SavedVariables: ${Name}DB
 
 Core.lua
@@ -100,4 +102,5 @@ end)
 "@
 
 Write-Host "Created addons\$Name and tests\$Name."
-Write-Host "Next: npm test -- $Name, then .\scripts\install.ps1 -Addon $Name"
+Write-Host "Next: npm test -- $Name, then .\scripts\install.ps1 (symlinks it into WoW; restart the game)."
+Write-Host "Add the addon to the tables in README.md and AGENTS.md."

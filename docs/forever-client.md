@@ -20,6 +20,15 @@ one**. Addons therefore use the Retail (Mainline) API, not the Classic Era API.
 | Product code | `wowf` |
 
 - No Forever-specific TOC filename suffix has been confirmed. Use a plain `<Name>.toc`.
+- `## Interface` takes comma-separated values (e.g. `16001, 120105`) when one addon supports
+  several clients.
+- AddOns list grouping, as documented on [warcraft.wiki.gg/wiki/TOC_format](https://warcraft.wiki.gg/wiki/TOC_format):
+  - `## Category: <name>` puts the addon under a collapsible header. Every addon in this repo uses
+    `Pluvas' addons`.
+  - `## Group: <main addon>` nests an addon under a main addon as a sub-list that cannot be
+    collapsed. Nested groups are not supported.
+  - `## IconTexture` or `## IconAtlas` sets the icon in the list.
+  - `## AddonCompartmentFunc` adds an entry to the addon compartment (minimap) menu.
 - Several globals that Classic Era addons rely on live in `C_*` namespaces here
   (`C_AddOns.GetAddOnMetadata`, `C_Item.*`, `C_Container.*`, ...).
 - Tooltips: use `TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, fn)`.

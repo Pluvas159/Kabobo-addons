@@ -14,14 +14,22 @@ World of Warcraft addons for **World of Warcraft: Forever**, kept together in on
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 ```
 
-This links every addon into `World of Warcraft\_forever_\Interface\AddOns` with a directory
-junction, so the game reads straight from this repo. It looks for the game in the usual places
-(`D:\World of Warcraft\_forever_` first). Use `-WowPath <folder>` or the `WOW_FOREVER_PATH`
-environment variable to point it elsewhere. Other options:
+This symlinks every addon into `World of Warcraft\_forever_\Interface\AddOns`, so the game reads
+straight from this repo. In game, they all appear under one **Pluvas' addons** header in the
+AddOns list. The script looks for the game in the usual places (`D:\World of Warcraft\_forever_`
+first). Use `-WowPath <folder>` or the `WOW_FOREVER_PATH` environment variable to point it
+elsewhere.
 
+Rerun it whenever addons are added, renamed or removed. It is safe to run any number of times,
+and it never touches addons that are not from this repo. Other options:
+
+- `-Status`: show what is installed, without changing anything.
 - `-Addon PluvasAuctions`: install only that addon.
 - `-Copy`: copy the files instead of linking them.
-- `-Uninstall`: remove the installed addons.
+- `-Uninstall`: remove this repo's addons from the game.
+
+Symlinks need Windows Developer Mode (or an admin shell). Without it, the script uses junctions,
+which work the same for the game.
 
 Restart WoW after installing a new addon. After that, `/reload` picks up code changes.
 

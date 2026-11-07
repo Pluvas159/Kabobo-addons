@@ -13,6 +13,21 @@ written by Pluvas. Each addon is self-contained and ships on its own.
 
 Add new addons to this table.
 
+## Rules every addon follows
+
+1. **Its TOC sits in the "Pluvas' addons" category**: `## Category: Pluvas' addons`, spelled
+   exactly like that. The in-game AddOns list then shows all our addons together under one
+   collapsible "Pluvas' addons" header. Use `Category`, not `## Group:`, because a Group needs a
+   main addon to hang the others under, and we do not have one.
+2. **Its TOC carries the shared metadata**: `## Interface` including `16001`, plus `## Title`,
+   `## Notes`, `## Author: Pluvas` and `## Version`.
+3. **It is symlinked into the game.** `scripts/install.ps1` symlinks *every* addon in `addons/`
+   into the Forever client's `Interface\AddOns`. Rerun it after adding, renaming or removing an
+   addon.
+
+`npm test` fails if rule 1 or 2 is broken. `scripts/new-addon.ps1` creates addons that already
+follow all three.
+
 ## Target client: read this first
 
 Forever looks like Classic but runs on the **modern Mainline 12.x (Midnight) client**:
@@ -41,7 +56,7 @@ tests/
   lib/harness.lua       test(), eq(), near(), truthy()
   <Name>/*.lua          tests for one addon
 scripts/
-  install.ps1           link addons into the Forever client (junctions)
+  install.ps1           symlink every addon into the Forever client
   new-addon.ps1         scaffold a new addon + its tests
 docs/                   client notes and other docs
 ```
@@ -56,14 +71,23 @@ The one exception is a short `README.md` for the addon.
 npm install                      # once: dev dependencies for tests
 npm test                         # syntax-check + test every addon
 npm test -- PluvasAuctions       # one addon
-powershell -ExecutionPolicy Bypass -File scripts/install.ps1          # link all addons into WoW
-powershell -ExecutionPolicy Bypass -File scripts/install.ps1 -Addon X # one addon
+powershell -ExecutionPolicy Bypass -File scripts/install.ps1          # symlink every addon into WoW
+powershell -ExecutionPolicy Bypass -File scripts/install.ps1 -Status  # show what is installed
 powershell -ExecutionPolicy Bypass -File scripts/new-addon.ps1 -Name PluvasThing -Title "Pluvas' Thing"
 ```
 
 The install script defaults to `D:\World of Warcraft\_forever_`. Override it with `-WowPath` or
-`WOW_FOREVER_PATH`. Addons are installed as junctions, so edits are live after `/reload` in game.
-Newly added addon folders need a game restart.
+`WOW_FOREVER_PATH`. What it does:
+
+- It creates directory **symbolic links** (`mklink /D`), which works without admin because
+  Windows Developer Mode is on. If symlinks are not allowed, it falls back to junctions and says so.
+- Running it again is safe. Correct links are left alone, junctions and wrong links are replaced,
+  an old copied folder is moved to `Interface\AddOns.backup\`, and links to addons that no
+  longer exist in the repo are removed.
+- It never touches addons that do not come from this repo.
+- Other options: `-Addon X` (only that addon), `-Copy` (copy the files), `-Uninstall`.
+
+Edits are live after `/reload` in game. Newly added addon folders need a game restart.
 
 ## Code conventions
 
@@ -87,10 +111,11 @@ Newly added addon folders need a game restart.
 
 ## Testing
 
-`npm test` does two things for every addon:
+`npm test` does three things for every addon:
 
-1. It parses each TOC-listed `.lua` file as **Lua 5.1**, which catches syntax the game would reject.
-2. It loads the addon into a fengari VM with `tests/lib/mocks.lua` and runs `tests/<Name>/*.lua`.
+1. It checks the TOC metadata against the rules above (category, interface, title, ...).
+2. It parses each TOC-listed `.lua` file as **Lua 5.1**, which catches syntax the game would reject.
+3. It loads the addon into a fengari VM with `tests/lib/mocks.lua` and runs `tests/<Name>/*.lua`.
 
 Notes:
 - fengari is **Lua 5.3**, so a few behaviours differ from the game. `unpack` is aliased in the
