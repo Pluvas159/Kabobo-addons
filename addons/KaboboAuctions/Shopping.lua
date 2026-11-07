@@ -45,6 +45,7 @@ local made = {}      -- [itemID] = crafts done for this list
 local skipped = {}   -- [itemID] = true: skipped with the Skip button
 local pending = nil  -- { id, qty }: a commodity purchase confirmed, waiting for the answer
 local pendingBids = {} -- [auctionID] = { id, qty }: item buyouts waiting for the answer
+local lastBought = 0   -- time() of the last purchase that went through
 
 -- Pure logic ----------------------------------------------------------------------
 
@@ -439,18 +440,24 @@ end
 
 local function findRecipe(m)
 	local name = P.ItemName(m.id)
+	local open = professionOpen(m.prof)
+	-- The name in the recipe search box, so the list shows the recipe (and you see it happen).
+	if open then
+		recipeSearchBox():SetText(name)
+		ns:Debug("shopping: recipe search", m.id, m.recipeID)
+	end
 	local TS = C_TradeSkillUI
 	if autoFill() and m.recipeID and TS and TS.OpenRecipe then
-		-- The client selects the recipe itself; the count is filled in once it shows (OnRecipeShown).
+		-- The client selects the recipe itself and the count is filled in once it shows
+		-- (OnRecipeShown). Already selected, it does not show again: fill the count now too.
 		usedAuto("open recipe " .. m.recipeID)
 		ns.Try(TS.OpenRecipe, m.recipeID)
-		return set("idle", "Selected " .. name .. ": check the count (" .. SH.Remaining(m) .. ") and click Create.")
+		SH.OnRecipeShown(m.recipeID)
+		return set("idle", "Selected " .. name .. " with " .. SH.Remaining(m) .. " to make: check it and click Create.")
 	end
-	if not professionOpen(m.prof) then
+	if not open then
 		return set("idle", "Open your " .. (m.prof or "profession") .. " window, then click Craft.")
 	end
-	recipeSearchBox():SetText(name)
-	ns:Debug("shopping: recipe search", m.id, m.recipeID)
 	set("idle", "Click " .. name .. " in the list, set " .. SH.Remaining(m) .. " and click Create.")
 end
 
@@ -738,6 +745,7 @@ if C_AuctionHouse and hooksecurefunc then
 end
 
 ns:On("COMMODITY_PURCHASE_SUCCEEDED", function()
+	lastBought = time()
 	local p = pending
 	pending = nil
 	if p then count(p.id, p.qty) end
@@ -749,6 +757,7 @@ ns:On("COMMODITY_PURCHASE_FAILED", function()
 end)
 
 ns:On("AUCTION_HOUSE_PURCHASE_COMPLETED", function(auctionID)
+	lastBought = time()
 	local p = pendingBids[auctionID]
 	pendingBids[auctionID] = nil
 	if p then count(p.id, p.qty) end
@@ -834,8 +843,13 @@ ns:On("COMMODITY_PRICE_UPDATED", function(unitPrice, totalPrice)
 end)
 
 -- The auction house refusing something (not enough money, item gone, ...): say why.
+-- Forever sends an error (code 10) right after every purchase that went through; that one is
+-- not a refusal.
+SH.AFTER_PURCHASE = 2
+
 ns:On("AUCTION_HOUSE_SHOW_ERROR", function(code)
-	ns:Debug("shopping: AUCTION_HOUSE_SHOW_ERROR", code)
+	ns:Debug("shopping: AUCTION_HOUSE_SHOW_ERROR", code, SH.ErrorText(code))
+	if time() - lastBought <= SH.AFTER_PURCHASE then return end
 	pending = nil
 	if SH.list then set(SH.state, "The auction house refused: " .. SH.ErrorText(code) .. ". Nothing was bought.") end
 end)
