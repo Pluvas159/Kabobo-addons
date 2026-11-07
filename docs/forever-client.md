@@ -85,8 +85,11 @@ Forever uses the **modern auction house** (`C_AuctionHouse`), with item and comm
   folder only overrides browse categories (`Blizzard_AuctionData.lua`). Your auctions are
   `AuctionHouseFrame.AuctionsFrame.AllAuctionsList`, a ScrollBox with a table builder (columns
   Name fill, Bid 120, Buyout 120, Time left 50), refreshed through `RefreshScrollFrame()`. Rows
-  carry `rowData` from `C_AuctionHouse.GetOwnedAuctionInfo`. Whether an owned commodity's
-  `buyoutAmount` is per unit is not confirmed; Kabobo's Auctions assumes it is.
+  carry `rowData` from `C_AuctionHouse.GetOwnedAuctionInfo`.
+- **An owned commodity's `buyoutAmount` is per unit** (confirmed from saved data, 2026-11-07:
+  26 Coyote Meat listed at 95s each had `buyoutAmount` 9500, the same as its market value).
+  `GetItemCommodityStatus` can return *Unknown* until the item's data has loaded, so do not divide
+  by the quantity on *Unknown*; Kabobo's Auctions checks the reading against the market value.
 - **Addons cannot buy at all (seen in game 2026-11-07):** `StartCommoditiesPurchase` called from
   an event handler got no answer; called from a click on an addon button it raised
   `ADDON_ACTION_BLOCKED KaboboAuctions StartCommoditiesPurchase()`. So the shopping list only fills

@@ -8,8 +8,9 @@ local C, Lines = ns.Crafting, ns.Lines
 local PUI = ns.KaboboUI
 
 local FALLBACK_BOTTOM = 44   -- clears the Track Recipe checkbox if we cannot measure it
+local GAP = 8                -- between the reagents and the panel
 
-local panel
+local panel, shown          -- shown: the summary on the panel, to fit it again a frame later
 
 -- Summary for a recipe in the open window, or nil when it makes no item or has no basic mats.
 -- With Kabobo's Professions loaded, it also says what the item would disenchant for.
@@ -25,30 +26,55 @@ function CP.SummaryFor(recipeID)
 	return summary
 end
 
--- Bottom left of the recipe details, lined up with the "Reagents:" column, growing upward, and
--- starting just above the Track Recipe checkbox that sits along the bottom edge.
-local function place()
-	local form = panel:GetParent()
-	local bottom = FALLBACK_BOTTOM
+-- Height above the form's bottom edge where the panel starts: just above the Track Recipe
+-- checkbox that sits along the bottom edge.
+local function bottomOffset(form)
 	local cb = form.TrackRecipeCheckbox
 	if cb and cb.GetTop and cb:GetTop() and form.GetBottom and form:GetBottom() then
-		bottom = cb:GetTop() - form:GetBottom() + 6
+		return cb:GetTop() - form:GetBottom() + 6
 	end
+	return FALLBACK_BOTTOM
+end
+
+-- How many lines fit between the lowest reagent and the panel's bottom, or nil when the
+-- reagents cannot be measured.
+function CP.LinesThatFit(form, lineHeight)
+	local lowest
+	for _, name in ipairs({ "Reagents", "OptionalReagents", "FinishingReagents" }) do
+		local f = form[name]
+		local b = f and f.IsShown and f:IsShown() and f.GetBottom and f:GetBottom()
+		if b and (not lowest or b < lowest) then lowest = b end
+	end
+	local formBottom = form.GetBottom and form:GetBottom()
+	if not (lowest and formBottom) then return nil end
+	local room = lowest - GAP - (formBottom + bottomOffset(form))
+	return math.max(0, math.floor(room / lineHeight))
+end
+
+-- Bottom left of the recipe details, lined up with the "Reagents:" column, growing upward, and
+-- cut short so it stays below the reagents.
+local function fit()
+	if not (panel and shown) then return end
+	local form = panel:GetParent()
+	local s = ns.db.settings
+	panel:SetLines(Lines.Craft(shown, s.matsList, time(), CP.LinesThatFit(form, panel.lineHeight)))
 	panel:ClearAllPoints()
-	panel:SetPoint("BOTTOMLEFT", form, "BOTTOMLEFT", 28, bottom)
+	panel:SetPoint("BOTTOMLEFT", form, "BOTTOMLEFT", 28, bottomOffset(form))
 end
 
 function CP:Update(recipeInfo)
 	if not panel then return end
 	local s = ns.db.settings
 	local summary = s.professionPanel and recipeInfo and CP.SummaryFor(recipeInfo.recipeID)
+	shown = summary
 	if not summary then
 		panel:Hide()
 		return
 	end
-	panel:SetLines(Lines.Craft(summary, s.matsList, time()))
-	place()
+	fit()
 	panel:Show()
+	-- Blizzard may lay the reagents out after Init returns: fit again once they settle.
+	C_Timer.After(0, ns:Guard("Profession panel fit", fit))
 end
 
 function CP:Hook()

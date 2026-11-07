@@ -114,15 +114,30 @@ function Lines.Tooltip(item, s, now)
 end
 
 -- Lines for one craft in the profession window, from a Crafting.CraftSummary result. With
--- `now`, old prices are flagged.
-function Lines.Craft(summary, showMats, now)
+-- `now`, old prices are flagged. maxLines (optional): the most lines that fit; the mats list
+-- is cut short ("+N more") to fit, or left out when not even one mat line fits.
+function Lines.Craft(summary, showMats, now, maxLines)
 	local out = {}
 	local per = ""
 	if summary.yield and summary.yield ~= 1 then
 		per = muted(" (per craft, makes " .. string.format("%g", summary.yield) .. ")")
 	end
 	out[#out + 1] = { "Mats cost" .. per, Lines.CostText(summary.cost, summary.missing, summary.matsSeen, now) }
-	if showMats ~= false then Lines.AddMats(out, summary.mats or {}, nil, now) end
+	local mats = summary.mats or {}
+	if showMats ~= false and #mats > 0 then
+		local room = Lines.MAX_MATS + 1
+		if maxLines then
+			-- The lines after the mats: sale value (3 with a profit), disenchanting (2 with a profit).
+			local fixed = 1 + (summary.value and (summary.profit and 3 or 2) or 1)
+			if summary.de then fixed = fixed + ((summary.de > 0 and summary.deProfit) and 2 or 1) end
+			room = math.min(room, maxLines - fixed)
+		end
+		if #mats <= room then
+			Lines.AddMats(out, mats, #mats, now)
+		elseif room >= 1 then
+			Lines.AddMats(out, mats, math.min(room - 1, Lines.MAX_MATS), now)
+		end
+	end
 	if summary.value then
 		out[#out + 1] = { "Sells for (AH)", Money(summary.value) .. (now and Lines.OldNote(summary.seen, now) or "") }
 		out[#out + 1] = { "After cut & deposit", Money(summary.net) }

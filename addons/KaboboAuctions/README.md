@@ -26,7 +26,8 @@ Auction house price tracking and auction profit tracking for **World of Warcraft
   characters. Mats priced from a vendor are marked "vendor" in the mats list, and item tooltips
   show a "Buy from vendor" line.
 - **Profession window**: the selected recipe shows its mats cost, what the item sells for on the
-  AH, what is left after the AH cut and deposit, the profit, and the list of base mats. With
+  AH, what is left after the AH cut and deposit, the profit, and the list of base mats (cut short
+  with "+N more" when it would run into the reagents; the item's tooltip has the full list). With
   Kabobo's Professions installed, items that can be disenchanted also show what disenchanting them
   brings in and the profit that way. The recipe list shows the profit per craft beside every
   recipe (`*` when some mats have no price yet), and how many leave the AH per day when that is
@@ -93,14 +94,20 @@ Data is kept per realm (ruleset) and faction in the `KaboboAuctionsDB` saved var
   does not count anything twice. The bank is not counted.
 
 **Undercut alerts**
-- Your auctions are read whenever the auction house opens and after you post or cancel one.
-- Every listing the addon sees is compared with yours: full scans, searches (the Sell tab searches
-  the item you post, so a fresh post is checked right away) and the browse list. When someone
-  lists below your price, or at your price (the later auction sells first, so that is an undercut
-  too), you get a chat line with both prices and a sound.
-  A full scan ends with one summary.
+- Your auctions are read whenever the auction house opens and after you post or cancel one. Each
+  one not checked in the last 5 minutes is then searched automatically, one every 2 seconds while
+  the auction house is open.
+- Every listing the addon sees is compared with yours too: full scans, searches (the Sell tab
+  searches the item you post, so a fresh post is checked right away) and the browse list. When
+  someone lists below your price, or at your price after you, you get a chat line with both
+  prices and a sound. A full scan ends with one summary.
+- **Same price**: at the same price the auction listed later sells first, so only someone who
+  lists at your price *after* you counts as an undercut. The AH does not say when an auction was
+  listed, so the addon remembers how many units others had at your price when it first compared
+  it; more units later means someone listed after you. Auctions the addon first sees long after
+  you posted them count everything already at your price as listed before you.
 - The Auctions tab shows the status beside each of your auctions: **Undercut** with the cheaper
-  price, **Undercut, same price**, or **Lowest**.
+  price, **Undercut, same price**, **Same price, before you**, or **Lowest**.
 - The ledger's **My auctions** list shows all of them, undercut first.
 
 ## Commands
@@ -170,8 +177,9 @@ sends an addon message (`PricesChanged`, `VendorPricesChanged`, `ScanStateChange
   leave the AH per day, your own sales and quantity listed. Profit beside each recipe in the
   profession window. Shopping list per recipe with what to buy and what to craft, cost and profit
   totals, that finds each mat in the AH and each recipe in the profession window, and advises how
-  many to buy under a price cap (`/ka buycap`). Undercut alerts for your auctions (someone else at
-  your price counts too), with the status shown in the Auctions tab and the ledger. Ledger rows
+  many to buy under a price cap (`/ka buycap`). Undercut alerts for your auctions, checked
+  automatically when the AH opens (someone listing at your price after you counts too), with the
+  status shown in the Auctions tab and the ledger. Ledger rows
   search their item in the AH. Crafted mats that are cheaper on the AH are priced (and bought) at
   the AH price. Mail read before its buyer name loaded is no longer recorded twice; duplicates
   saved before are removed. A diagnostic log (`/ka log`).

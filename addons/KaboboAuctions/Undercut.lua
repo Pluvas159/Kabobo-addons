@@ -1,35 +1,43 @@
--- Kabobo's Auctions: your auctions, and whether someone else now lists the item cheaper or at
--- your price. Both are "undercut": at the same price, the auction listed later sells first.
+-- Kabobo's Auctions: your auctions, and whether someone else now lists the item cheaper, or at
+-- your price after you (at the same price, the auction listed later sells first).
 --
 -- Your auctions are read with C_AuctionHouse.QueryOwnedAuctions when the auction house opens and
--- after you post or cancel one. They are compared against every listing the addon sees: full
--- scans (Scanner sends FullScanListings), item and commodity searches (the Sell tab searches the
--- item you post, so a fresh post is checked right away) and browse results. A change to undercut
--- prints one chat line; a full scan prints one summary.
+-- after you post or cancel one. Every one whose comparison is missing or older than STALE is then
+-- searched, one at a time (the check queue). They are also compared against every listing the
+-- addon sees: full scans (Scanner sends FullScanListings), item and commodity searches (the Sell
+-- tab searches the item you post, so a fresh post is checked right away) and browse results. A
+-- change to undercut prints one chat line; a full scan prints one summary.
+--
+-- Same price: the AH does not say when an auction was listed. So the first comparison at your
+-- price saves how many units others list at exactly that price (the baseline, b). More units
+-- there later means someone listed after you: undercut. No more than the baseline: "matched",
+-- listed before you. The baseline follows the lowest count seen, so units that sold and were
+-- relisted still count, and starts again when you change your price.
 --
 -- Saved layout: db.mine[realmKey][charName][itemKey] = {
 --   u = your cheapest unit price, q = quantity you list, t = time() read,
---   s = "undercut" | "lowest" (nil until compared; "matched" from older versions counts as
---   undercut), o = cheapest other unit price (equal to u: undercut at the same price),
---   ot = time() of that comparison }
+--   k = { itemID, itemLevel, itemSuffix, speciesID } to search it,
+--   s = "undercut" | "matched" | "lowest" (nil until compared), o = cheapest other unit price,
+--   n = units others list at your price, b = the baseline of n, ot = time() of the comparison }
 -- Sends UndercutsChanged when the list or a status changes.
 local _, ns = ...
 local U = ns:NewModule("Undercut")
 local P = ns.Pricing
 
 U.KEEP = 48 * 3600   -- the longest auction; older entries are gone even if never refreshed
+U.STALE = 300        -- a comparison older than this is checked again when the AH opens
+U.CHECK_GAP = 2      -- seconds between the check queue's searches
 
 local ah = ns:Session("AUCTION_HOUSE_SHOW", "AUCTION_HOUSE_CLOSED")
 
 -- Pure logic ----------------------------------------------------------------------
 
 -- listings: array of { unitPrice, quantity, own }. own marks your listings when the source
--- knows (searches, full scans); without it, only listings strictly cheaper than myUnit count.
--- myUnit: your saved cheapest unit price; your own listings in `listings` override it.
--- Returns status ("undercut", "lowest", or nil when you list none), your unit price and the
--- cheapest unit price of someone else (nil when nobody else lists it). Someone else at your
--- price is an undercut too: the later auction sells first. That needs your own rows marked;
--- without them a listing at your price may be yours, so only strictly cheaper counts.
+-- knows (searches, full scans). myUnit: your saved cheapest unit price; your own listings in
+-- `listings` override it.
+-- Returns your unit price (nil when you list none), the cheapest unit price of someone else (nil
+-- when nobody else lists it), and how many units others list at exactly your price. That last
+-- one is nil when your own rows are not marked: a listing at your price may then be yours.
 function U.Compare(listings, myUnit)
 	local ownMin, otherMin
 	for i = 1, #listings do
@@ -42,9 +50,44 @@ function U.Compare(listings, myUnit)
 	end
 	local mine = ownMin or myUnit
 	if not mine then return nil end
-	if otherMin and otherMin < mine then return "undercut", mine, otherMin end
-	if ownMin and otherMin == mine then return "undercut", mine, otherMin end
-	return "lowest", mine, otherMin
+	local atMine
+	if ownMin then
+		atMine = 0
+		for i = 1, #listings do
+			local l = listings[i]
+			if not l[3] and l[1] == mine then atMine = atMine + (l[2] or 0) end
+		end
+	end
+	return mine, otherMin, atMine
+end
+
+-- The status for your price `mine`, the cheapest other price, the units others list at your
+-- price (atMine, nil when unknown) and the baseline of that (see the top of the file).
+function U.StatusFor(mine, other, atMine, baseline)
+	if not mine then return nil end
+	if other and other < mine then return "undercut" end
+	if atMine and atMine > 0 then
+		if baseline and atMine > baseline then return "undercut" end
+		return "matched"
+	end
+	return "lowest"
+end
+
+-- Price per unit of an owned auction. A commodity's buyoutAmount is per unit, an item auction's
+-- is for all of it. kind: "commodity", "item" or nil (the client has not loaded the item yet).
+-- market: the item's market value, or nil. A stack's price can then be told apart: of the two
+-- readings, the one nearer the market value wins; without one, unknown counts as a commodity
+-- (stackable things are commodities on this AH; gear comes one at a time).
+function U.OwnedUnit(buyout, qty, kind, market)
+	qty = math.max(1, qty or 1)
+	if qty == 1 then return buyout end
+	local divided = math.floor(buyout / qty + 0.5)
+	if market and market > 0 then
+		local function off(x) return math.abs(math.log(math.max(x, 1) / market)) end
+		return off(buyout) <= off(divided) and buyout or divided
+	end
+	if kind == "item" then return divided end
+	return buyout
 end
 
 -- Key of an owned auction or search result: "itemID" or "itemID:suffix".
@@ -69,10 +112,15 @@ function U:Mine()
 	return ns.Ensure(ns.db.mine, ns.realmKey, ns.charName)
 end
 
+-- Undercut at your price: someone listed at it after you.
+function U.SamePrice(e)
+	return e.s == "undercut" and e.o ~= nil and e.o == e.u
+end
+
 -- Your auctions as list items, undercut first: { key, entry }.
 function U:List()
 	local mine = U:Mine()
-	local order = { undercut = 1, matched = 1, lowest = 3 }
+	local order = { undercut = 1, matched = 2, lowest = 3 }
 	local list = {}
 	for key, e in pairs(mine or {}) do list[#list + 1] = { key = key, e = e } end
 	table.sort(list, function(a, b)
@@ -95,25 +143,37 @@ end
 
 local function alertLine(key, e)
 	local Money = ns.KaboboUI.Money
-	local same = e.o == e.u
+	local same = U.SamePrice(e)
 	local what = ns.KaboboUI.Color(same and "Undercut at your price" or "Undercut", "bad")
 	return what .. ": " .. itemLink(key) .. (e.q and e.q > 1 and (" x" .. e.q) or "")
-		.. "  yours " .. Money(e.u) .. ", " .. (same and "someone else also lists at " or "cheapest now ") .. Money(e.o)
+		.. "  yours " .. Money(e.u) .. ", "
+		.. (same and "someone listed after you at " or "cheapest now ") .. Money(e.o)
 end
 
 local function sound()
 	if PlaySound and SOUNDKIT and SOUNDKIT.RAID_WARNING then ns.Try(PlaySound, SOUNDKIT.RAID_WARNING) end
 end
 
--- Records a comparison for one item. Returns true when it is newly undercut (or by a new price),
--- which is worth an alert.
-local function record(key, status, mine, other, now)
+-- Records a comparison for one item (see U.Compare for mine/other/atMine). Returns true when it
+-- is newly undercut (or by a new price), which is worth an alert.
+local function record(key, mine, other, atMine, now)
 	local all = U:Mine()
-	if not (all and status) then return false end
+	if not (all and mine) then return false end
 	local e = all[key]
 	if not e then
 		e = { u = mine, t = now }
 		all[key] = e
+	end
+	if e.u ~= mine then e.b = nil end   -- a new price: a new baseline
+	if atMine then
+		e.b = e.b and math.min(e.b, atMine) or atMine
+		e.n = atMine
+	end
+	local status = U.StatusFor(mine, other, atMine, e.b)
+	-- A source that does not mark your listings (atMine nil) cannot judge your own price: keep
+	-- what a search that could judge it found.
+	if not atMine and other == mine and e.u == mine and (e.s == "matched" or e.s == "undercut") then
+		status = e.s
 	end
 	local news = status == "undercut" and (e.s ~= status or e.o ~= other or e.u ~= mine)
 	e.u, e.s, e.o, e.ot = mine, status, other, now
@@ -125,14 +185,68 @@ local function check(key, listings)
 	if not key then return end
 	local all = U:Mine()
 	local saved = all and all[key]
-	local status, mine, other = U.Compare(listings, saved and saved.u)
-	if not status then return end
-	local now = time()
-	if record(key, status, mine, other, now) and ns.db.settings.undercutAlerts then
+	local mine, other, atMine = U.Compare(listings, saved and saved.u)
+	if not mine then return end
+	ns:Debug("undercut: compared", key, "yours", mine, "other", other, "at yours", atMine)
+	if record(key, mine, other, atMine, time()) and ns.db.settings.undercutAlerts then
 		ns:Print(alertLine(key, all[key]))
 		sound()
 	end
 	ns:Send("UndercutsChanged")
+end
+
+-- The check queue -----------------------------------------------------------------
+--
+-- Searches your items one at a time, CHECK_GAP seconds apart, only while the AH is open. The
+-- search results come back as ordinary search events, compared above.
+
+local queue, queued, pumpTimer = {}, {}, nil
+
+local function stopQueue()
+	if pumpTimer then pumpTimer:Cancel(); pumpTimer = nil end
+	queue, queued = {}, {}
+end
+
+local function pump()
+	pumpTimer = nil
+	local AH = C_AuctionHouse
+	if not (ah.open and AH and AH.SendSearchQuery and AH.MakeItemKey) then return stopQueue() end
+	if #queue == 0 then return end
+	if AH.IsThrottledMessageSystemReady and not AH.IsThrottledMessageSystemReady() then
+		pumpTimer = C_Timer.NewTimer(U.CHECK_GAP, ns:Guard("Undercut checks", pump))
+		return
+	end
+	local key = table.remove(queue, 1)
+	queued[key] = nil
+	local e = U:Mine() and U:Mine()[key]
+	local k = e and e.k
+	if k and k[1] then
+		ns:Debug("undercut: checking", key)
+		local order = Enum and Enum.AuctionHouseSortOrder and Enum.AuctionHouseSortOrder.Price or 0
+		ns.Try(AH.SendSearchQuery, AH.MakeItemKey(k[1], k[2] or 0, k[3] or 0, k[4]),
+			{ { sortOrder = order, reverseSort = false } }, true)
+	end
+	if #queue > 0 then pumpTimer = C_Timer.NewTimer(U.CHECK_GAP, ns:Guard("Undercut checks", pump)) end
+end
+
+-- Queues a search for each of your auctions whose comparison is missing or older than STALE.
+function U:QueueStale(now)
+	local all = U:Mine()
+	if not (all and ah.open) then return 0 end
+	local added = 0
+	for key, e in pairs(all) do
+		if e.k and not queued[key] and (not e.ot or now - e.ot > U.STALE) then
+			queue[#queue + 1] = key
+			queued[key] = true
+			added = added + 1
+		end
+	end
+	table.sort(queue, function(a, b) return tostring(a) < tostring(b) end)
+	if added > 0 and not pumpTimer then
+		ns:Debug("undercut: queued", added, "checks")
+		pumpTimer = C_Timer.NewTimer(U.CHECK_GAP, ns:Guard("Undercut checks", pump))
+	end
+	return added
 end
 
 -- Reading your auctions -----------------------------------------------------------
@@ -146,15 +260,19 @@ local function queryOwned()
 end
 local queryOwnedSoon = ns:Debounce("Owned auctions", 1, queryOwned)
 
--- Price per unit of an owned auction. Commodity buyouts are per unit; an item auction's buyout
--- is for all of it.
-local function ownedUnit(info)
-	local qty = math.max(1, info.quantity or 1)
-	local AH = C_AuctionHouse
-	local status = AH.GetItemCommodityStatus and info.itemKey and ns.Try(AH.GetItemCommodityStatus, info.itemKey.itemID)
-	local commodity = Enum and Enum.ItemCommodityStatus and status == Enum.ItemCommodityStatus.Commodity
-	if commodity then return info.buyoutAmount end
-	return math.floor(info.buyoutAmount / qty + 0.5)
+-- "commodity", "item", or nil while the client has not loaded the item.
+local function commodityKind(itemID)
+	local AH, E = C_AuctionHouse, Enum and Enum.ItemCommodityStatus
+	local status = AH.GetItemCommodityStatus and ns.Try(AH.GetItemCommodityStatus, itemID)
+	if E and status == E.Commodity then return "commodity" end
+	if E and status == E.Item then return "item" end
+	if C_Item and C_Item.RequestLoadItemDataByID then ns.Try(C_Item.RequestLoadItemDataByID, itemID) end
+	return nil
+end
+
+local function ownedUnit(info, key)
+	local entry = P:Get(key)
+	return U.OwnedUnit(info.buyoutAmount, info.quantity, commodityKind(info.itemKey.itemID), entry and entry.m)
 end
 
 ns:On("OWNED_AUCTIONS_UPDATED", function()
@@ -167,13 +285,14 @@ ns:On("OWNED_AUCTIONS_UPDATED", function()
 	local now, seen = time(), {}
 	for i = 1, AH.GetNumOwnedAuctions() or 0 do
 		local info = AH.GetOwnedAuctionInfo(i)
-		if info and info.status == active and info.buyoutAmount and info.buyoutAmount > 0 then
+		if info and info.status == active and info.buyoutAmount and info.buyoutAmount > 0 and info.itemKey then
 			local key = U.KeyOf(info.itemKey, info.itemLink)
 			if key then
-				local unit = ownedUnit(info)
+				local unit = ownedUnit(info, key)
 				local s = seen[key]
 				if not s then
-					s = { u = unit, q = 0 }
+					local ik = info.itemKey
+					s = { u = unit, q = 0, k = { ik.itemID, ik.itemLevel, ik.itemSuffix, ik.battlePetSpeciesID } }
 					seen[key] = s
 				end
 				if unit < s.u then s.u = unit end
@@ -181,21 +300,33 @@ ns:On("OWNED_AUCTIONS_UPDATED", function()
 			end
 		end
 	end
-	-- Replace the list, keeping a comparison that is still about the same price.
+	-- Replace the list. A comparison at the same price is kept; at a new price, what is known
+	-- about the others still says whether someone is cheaper, and the check queue does the rest.
 	for key, s in pairs(seen) do
 		local old = all[key]
-		local keep = old and old.u == s.u
-		all[key] = { u = s.u, q = s.q, t = now, s = keep and old.s or nil, o = keep and old.o or nil, ot = keep and old.ot or nil }
+		local e = { u = s.u, q = s.q, t = now, k = s.k }
+		if old then
+			e.o, e.ot = old.o, old.ot
+			if old.u == s.u then
+				e.s, e.n, e.b = old.s, old.n, old.b
+			elseif old.o then
+				e.s = old.o < s.u and "undercut" or (old.o > s.u and "lowest" or nil)
+				e.ot = nil   -- check it again soon
+			end
+		end
+		all[key] = e
 	end
 	for key in pairs(all) do
 		if not seen[key] then all[key] = nil end
 	end
 	ns:Send("UndercutsChanged")
+	U:QueueStale(now)
 end)
 
 ns:On("AUCTION_HOUSE_SHOW", queryOwnedSoon)
 ns:On("AUCTION_HOUSE_AUCTION_CREATED", queryOwnedSoon)
 ns:On("AUCTION_CANCELED", queryOwnedSoon)
+ns:On("AUCTION_HOUSE_CLOSED", stopQueue)
 
 -- Listings seen -------------------------------------------------------------------
 
@@ -206,11 +337,11 @@ ns:On("COMMODITY_SEARCH_RESULTS_UPDATED", function(itemID)
 	for i = 1, AH.GetNumCommoditySearchResults(itemID) do
 		local r = AH.GetCommoditySearchResultInfo(itemID, i)
 		if r and r.unitPrice and r.unitPrice > 0 then
-			listings[#listings + 1] = { r.unitPrice, r.quantity or 0, r.containsOwnerItem }
+			local own = r.containsOwnerItem and (r.numOwnerItems or r.quantity or 0) or 0
+			if own > 0 then listings[#listings + 1] = { r.unitPrice, own, true } end
 			-- A row can hold your units and someone else's at the same price.
-			if r.containsOwnerItem and (r.totalNumberOfOwners or 1) > 1 then
-				listings[#listings + 1] = { r.unitPrice, (r.quantity or 0) - (r.numOwnerItems or 0) }
-			end
+			local others = (r.quantity or 0) - own
+			if others > 0 then listings[#listings + 1] = { r.unitPrice, others } end
 		end
 	end
 	check(P.ItemKey(itemID), listings)
@@ -236,14 +367,15 @@ ns:On("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", function()
 	if not (all and next(all) and C_AuctionHouse) then return end
 	for _, r in ipairs(C_AuctionHouse.GetBrowseResults() or {}) do
 		local key = U.KeyOf(r.itemKey)
-		if key and all[key] and r.minPrice and r.minPrice > 0 then
+		local e = key and all[key]
+		if e and r.minPrice and r.minPrice > 0 and r.minPrice < e.u then
 			check(key, { { r.minPrice, r.totalQuantity or 0 } })
 		end
 	end
 end)
 
 -- After a full scan: every item you list, one summary.
--- grouped: { [itemKey] = { { unit, qty, own }, ... } } from Scanner.
+-- grouped: { [itemKey] = { { unit, qty, own, seller }, ... } } from Scanner.
 function U.FromScan(grouped, now)
 	local all = U:Mine()
 	if not all then return {} end
@@ -260,8 +392,8 @@ function U.FromScan(grouped, now)
 	for key in pairs(keys) do
 		local listings = grouped[key]
 		if listings then
-			local status, mine, other = U.Compare(listings, all[key] and all[key].u)
-			if record(key, status, mine, other, now) then alerts[#alerts + 1] = key end
+			local mine, other, atMine = U.Compare(listings, all[key] and all[key].u)
+			if record(key, mine, other, atMine, now) then alerts[#alerts + 1] = key end
 		end
 	end
 	table.sort(alerts, function(a, b) return tostring(a) < tostring(b) end)

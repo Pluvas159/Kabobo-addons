@@ -13,8 +13,9 @@ local DAY = 86400
 local WIDTH, HEIGHT = 620, 470
 local ROWS = 12
 local PERIODS = { "Today", "7 days", "30 days", "All time" }
+-- The columns plus the list's 6 px gaps (578) fit the content width (WIDTH - 2 x 18 = 584).
 local LIST_COLUMNS = {
-	{ width = 90 }, { width = 230 }, { width = 130 }, { width = 130, justify = "RIGHT" },
+	{ width = 140 }, { width = 190 }, { width = 120 }, { width = 110, justify = "RIGHT" },
 }
 
 local window
@@ -39,13 +40,13 @@ local function topRow(row, it)
 end
 
 local STATUS = {
-	undercut = { "Undercut", "bad" }, matched = { "Undercut", "bad" }, lowest = { "Lowest", "good" },
+	undercut = { "Undercut", "bad" }, matched = { "Same price, before you", "gold" }, lowest = { "Lowest", "good" },
 }
 
 local function mineRow(row, it)
 	local e = it.e
-	local st = STATUS[e.s]
-	local status = st and PUI.Color(st[1], st[2]) or PUI.Color("Not checked", "muted")
+	local st = ns.Undercut.SamePrice(e) and { "Undercut, same price", "bad" } or STATUS[e.s]
+	local status = st and PUI.Color(st[1], st[2]) or PUI.Color("Not checked yet", "muted")
 	local qty = e.q and e.q > 1 and PUI.Color(" x" .. e.q, "muted") or ""
 	local name = ns.Pricing.ItemName(tonumber(tostring(it.key):match("^(%d+)")))
 	PUI.SetColumns(row, status, name .. qty, Money(e.u), Money(e.o))

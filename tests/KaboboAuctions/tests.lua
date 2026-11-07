@@ -521,6 +521,27 @@ test("mats list shows the base mats behind the cost", function()
 	eq(CR.FormatQty(1 / 3), "0.33")
 end)
 
+test("profession panel mats are cut short to fit under the reagents", function()
+	local Lines = ns.Lines
+	local mats = {}
+	for i = 1, 8 do mats[i] = { id = 2000 + i, qty = 1, unit = 10, cost = 10 } end
+	local summary = { cost = 80, missing = 0, yield = 1, value = 1000, net = 935, profit = 855, mats = mats }
+	eq(#Lines.Craft(summary, true), 12, "everything without a limit")
+	local lines = Lines.Craft(summary, true, nil, 8)
+	eq(#lines, 8)
+	eq(lines[5][1], "   +5 more")
+	eq(lines[6][1], "Sells for (AH)")
+	eq(#Lines.Craft(summary, true, nil, 4), 4, "no room for mats")
+	eq(#Lines.Craft(summary, true, nil, 12), 12, "all fit")
+
+	-- room measured between the lowest reagent and the Track Recipe checkbox
+	local function frame(bottom, top) return { IsShown = function() return true end,
+		GetBottom = function() return bottom end, GetTop = function() return top end } end
+	local form = { Reagents = frame(300), TrackRecipeCheckbox = frame(100, 120), GetBottom = function() return 100 end }
+	eq(ns.CraftPanel.LinesThatFit(form, 14), 11)   -- 300 - 8 - (100 + 26) = 166 px
+	eq(ns.CraftPanel.LinesThatFit({}, 14), nil)
+end)
+
 test("profession panel lists mats", function()
 	local Lines = ns.Lines
 	local summary = { cost = 650, missing = 0, yield = 1, mats = {
@@ -843,20 +864,128 @@ end)
 test("undercut: compare your price with other listings", function()
 	local U = ns.Undercut
 	-- strictly cheaper by someone else
-	local s, mine, other = U.Compare({ { 90, 5 }, { 100, 10, true } })
-	eq(s, "undercut"); eq(mine, 100); eq(other, 90)
-	-- same price, someone else: undercut too, the later auction sells first (only known when own
-	-- rows are marked)
-	s, mine, other = U.Compare({ { 100, 5 }, { 100, 10, true }, { 120, 1 } })
-	eq(s, "undercut"); eq(mine, 100); eq(other, 100)
+	local mine, other, atMine = U.Compare({ { 90, 5 }, { 100, 10, true } })
+	eq(mine, 100); eq(other, 90); eq(atMine, 0)
+	eq(U.StatusFor(mine, other, atMine, 0), "undercut")
+	-- others at your price: counted
+	mine, other, atMine = U.Compare({ { 100, 5 }, { 100, 10, true }, { 100, 2 }, { 120, 1 } })
+	eq(mine, 100); eq(other, 100); eq(atMine, 7)
 	-- you are the cheapest
-	s, mine, other = U.Compare({ { 100, 10, true }, { 120, 1 } })
-	eq(s, "lowest"); eq(other, 120)
-	-- no own rows: the saved price counts, only strictly cheaper is an undercut
-	eq((U.Compare({ { 100, 3 } }, 100)), "lowest")
-	eq((U.Compare({ { 99, 3 } }, 100)), "undercut")
+	mine, other, atMine = U.Compare({ { 100, 10, true }, { 120, 1 } })
+	eq(U.StatusFor(mine, other, atMine, 0), "lowest"); eq(other, 120)
+	-- no own rows: the saved price counts, and a listing at it may be yours
+	mine, other, atMine = U.Compare({ { 100, 3 } }, 100)
+	eq(atMine, nil)
+	eq(U.StatusFor(mine, other, atMine, nil), "lowest")
+	eq(U.StatusFor(U.Compare({ { 99, 3 } }, 100)), "undercut")
 	-- you list none
 	eq(U.Compare({ { 99, 3 } }), nil)
+
+	-- same price: before you (no more than the baseline) or after you (more)
+	eq(U.StatusFor(100, 100, 5, 5), "matched")
+	eq(U.StatusFor(100, 100, 3, 3), "matched", "some sold")
+	eq(U.StatusFor(100, 100, 8, 5), "undercut", "someone listed after you")
+	eq(U.StatusFor(100, 100, 5, nil), "matched", "first comparison")
+end)
+
+test("undercut: price per unit of your own auctions", function()
+	local U = ns.Undercut
+	eq(U.OwnedUnit(9500, 26, "commodity"), 9500)
+	eq(U.OwnedUnit(1000, 2, "item"), 500)
+	eq(U.OwnedUnit(9500, 26, nil), 9500, "not loaded yet: a stack is a commodity")
+	eq(U.OwnedUnit(14500, 1, nil), 14500)
+	-- the market value tells the two readings apart
+	eq(U.OwnedUnit(9500, 26, "item", 9500), 9500)
+	eq(U.OwnedUnit(9500, 26, "commodity", 365), 365)
+end)
+
+test("undercut: same price counts only when listed after you", function()
+	local U = ns.Undercut
+	local mine = U:Mine()
+	for k in pairs(mine) do mine[k] = nil end
+	local search = { { 200, 4 }, { 200, 2, true }, { 300, 1 } }
+	C_AuctionHouse = {
+		HasFullCommoditySearchResults = function() return true end,
+		GetNumCommoditySearchResults = function() return #search end,
+		GetCommoditySearchResultInfo = function(_, i)
+			local l = search[i]
+			return { unitPrice = l[1], quantity = l[2], containsOwnerItem = l[3], numOwnerItems = l[3] and l[2] or 0 }
+		end,
+	}
+	_PRINTED_COUNT = #_PRINTED
+	_FIRE("COMMODITY_SEARCH_RESULTS_UPDATED", 2673)
+	eq(mine["2673"].s, "matched", "4 units were there when you were first compared")
+	eq(mine["2673"].b, 4)
+	eq(#_PRINTED, _PRINTED_COUNT, "no alert")
+	eq(ns.AuctionLabels.Text({ itemKey = { itemID = 2673 }, status = 0 }), PUI.Color("Same price, before you", "gold"))
+
+	-- someone lists 3 more at your price
+	search[1] = { 200, 7 }
+	_FIRE("COMMODITY_SEARCH_RESULTS_UPDATED", 2673)
+	eq(mine["2673"].s, "undercut")
+	truthy(U.SamePrice(mine["2673"]))
+	truthy(#_PRINTED > _PRINTED_COUNT, "alert")
+	eq(ns.AuctionLabels.Text({ itemKey = { itemID = 2673 }, status = 0 }), PUI.Color("Undercut, same price", "bad"))
+
+	-- a full scan that cannot tell your rows apart keeps that
+	U.FromScan({ ["2673"] = { { 200, 9 }, { 300, 1 } } }, time())
+	eq(mine["2673"].s, "undercut")
+	-- a browse result at your price may be yours: ignored
+	eq(mine["2673"].o, 200)
+
+	C_AuctionHouse = nil
+	for k in pairs(mine) do mine[k] = nil end
+end)
+
+test("undercut: every stale auction is searched, one at a time", function()
+	local U = ns.Undercut
+	local mine = U:Mine()
+	for k in pairs(mine) do mine[k] = nil end
+	Enum.AuctionStatus = { Active = 0, Sold = 1 }
+	local owned = {
+		{ itemKey = { itemID = 2673, itemLevel = 1 }, status = 0, quantity = 26, buyoutAmount = 9500 },
+		{ itemKey = { itemID = 2870, itemLevel = 25 }, status = 0, quantity = 1, buyoutAmount = 14500 },
+	}
+	local searches = {}
+	-- the market value agrees with 95s each (an earlier test recorded another price)
+	ns.Pricing:Realm().items["2673"] = { m = 9500, t = time() }
+	C_AuctionHouse = {
+		GetNumOwnedAuctions = function() return #owned end,
+		GetOwnedAuctionInfo = function(i) return owned[i] end,
+		HasFullOwnedAuctionResults = function() return true end,
+		IsThrottledMessageSystemReady = function() return true end,
+		MakeItemKey = function(id, level) return { itemID = id, itemLevel = level } end,
+		SendSearchQuery = function(itemKey) searches[#searches + 1] = itemKey end,
+	}
+	_FIRE("AUCTION_HOUSE_SHOW")
+	_FIRE("OWNED_AUCTIONS_UPDATED")
+	eq(mine["2673"].u, 9500, "the price per unit, not 9500 / 26")
+	eq(#searches, 0, "spaced out")
+	_RUN_TIMERS()
+	eq(#searches, 2)
+	eq(searches[1].itemID, 2673)
+	eq(searches[2].itemID, 2870); eq(searches[2].itemLevel, 25, "gear is searched at its level")
+
+	-- a fresh comparison is not searched again
+	mine["2673"].ot, mine["2870"].ot = time(), time()
+	_FIRE("OWNED_AUCTIONS_UPDATED")
+	_RUN_TIMERS()
+	eq(#searches, 2)
+
+	-- a new price keeps what is known about the others
+	mine["2673"].o, mine["2673"].s = 9000, "undercut"
+	owned[1].buyoutAmount = 8900
+	_FIRE("OWNED_AUCTIONS_UPDATED")
+	eq(mine["2673"].s, "lowest"); eq(mine["2673"].o, 9000)
+
+	-- closing the auction house stops the queue
+	_FIRE("AUCTION_HOUSE_CLOSED")
+	_RUN_TIMERS()
+	eq(#searches, 2, "closing stops the queued check of the repriced one")
+
+	ns.Pricing:Realm().items["2673"] = nil
+	C_AuctionHouse = nil
+	for k in pairs(mine) do mine[k] = nil end
 end)
 
 test("undercut: owned auctions are read, and a full scan reports what changed", function()

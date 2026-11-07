@@ -1,5 +1,5 @@
 -- Kabobo's Auctions: undercut status beside each of your auctions in the auction house's
--- Auctions tab ("Undercut 10c", "Undercut, same price", "Lowest").
+-- Auctions tab ("Undercut 10c", "Undercut, same price", "Same price, before you", "Lowest").
 --
 -- The list is AuctionHouseFrame.AuctionsFrame.AllAuctionsList (Blizzard_AuctionHouseUI, shared
 -- by Forever and Mainline): a ScrollBox with a table builder, columns Name (fills), Bid 120,
@@ -24,8 +24,9 @@ function AL.Text(rowData)
 	local all = U:Mine()
 	local e = all and all[U.KeyOf(rowData.itemKey, rowData.itemLink)]
 	if not (e and e.s) then return nil end
-	if e.s == "matched" or (e.s == "undercut" and e.o == e.u) then return PUI.Color("Undercut, same price", "bad") end
+	if U.SamePrice(e) then return PUI.Color("Undercut, same price", "bad") end
 	if e.s == "undercut" then return PUI.Color("Undercut ", "bad") .. PUI.Money(e.o) end
+	if e.s == "matched" then return PUI.Color("Same price, before you", "gold") end
 	return PUI.Color("Lowest", "good")
 end
 
