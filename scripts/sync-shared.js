@@ -1,8 +1,8 @@
 // Copies shared libraries into the addons that embed them.
 //
 //   npm run sync                                          refresh every embedded copy
-//   node scripts/sync-shared.js --embed PluvasX           embed every shared library into an addon
-//   node scripts/sync-shared.js --embed PluvasX PluvasUI  embed only the named ones
+//   node scripts/sync-shared.js --embed KaboboX           embed every shared library into an addon
+//   node scripts/sync-shared.js --embed KaboboX KaboboUI  embed only the named ones
 //
 // shared/<Lib>/ is the only place a library is edited. Each addon carries its own copy in
 // addons/<Name>/Libs/<Lib>/ so it still ships on its own; `npm test` fails when a copy differs.
@@ -15,11 +15,11 @@ const sharedDir = path.join(repo, "shared");
 const addonsDir = path.join(repo, "addons");
 const SHIPPED = /\.(lua|xml)$/i;
 
-// Load order: PluvasCore (the runtime) first, then the rest by name.
+// Load order: KaboboCore (the runtime) first, then the rest by name.
 const libs = fs.readdirSync(sharedDir, { withFileTypes: true })
   .filter((d) => d.isDirectory() && fs.existsSync(path.join(sharedDir, d.name, `${d.name}.xml`)))
   .map((d) => d.name)
-  .sort((a, b) => (a === "PluvasCore" ? -1 : b === "PluvasCore" ? 1 : a.localeCompare(b)));
+  .sort((a, b) => (a === "KaboboCore" ? -1 : b === "KaboboCore" ? 1 : a.localeCompare(b)));
 
 // Make dest hold exactly the shipped files of src. Returns the number of files changed.
 function mirror(src, dest) {
@@ -44,7 +44,7 @@ function mirror(src, dest) {
 }
 
 // Add "Libs\<Lib>\<Lib>.xml" to the TOC if it is not there: after the libraries it already
-// loads, or else before the first file line. Embedding in `libs` order keeps PluvasCore first.
+// loads, or else before the first file line. Embedding in `libs` order keeps KaboboCore first.
 function addToToc(addon, lib) {
   const tocPath = path.join(addonsDir, addon, `${addon}.toc`);
   const lines = fs.readFileSync(tocPath, "utf8").split("\n");

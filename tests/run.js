@@ -1,10 +1,10 @@
 // Runs every addon's tests outside the game.
 //
 //   npm test                    all addons and shared libraries
-//   npm test -- PluvasAuctions  only the named addon(s) or library(ies)
+//   npm test -- KaboboAuctions  only the named addon(s) or library(ies)
 //
 // For each addon in addons/<Name>/<Name>.toc:
-//   0. the TOC is checked for the shared metadata (Category "Pluvas' addons", Interface 16001, ...)
+//   0. the TOC is checked for the shared metadata (Category "Kabobo's addons", Interface 16001, ...)
 //   1. every shared library is embedded (addons/<Name>/Libs/<Lib>), matches shared/<Lib>
 //      exactly and is loaded by the TOC
 //   2. every .lua file the TOC loads (directly or through an .xml include) is syntax-checked as
@@ -61,8 +61,8 @@ function tocEntries(addon) {
 }
 
 // Every addon must carry the same metadata so it targets Forever and shows up under the
-// "Pluvas' addons" header in the in-game AddOns list.
-const CATEGORY = "Pluvas' addons";
+// "Kabobo's addons" header in the in-game AddOns list.
+const CATEGORY = "Kabobo's addons";
 const FOREVER_INTERFACE = "16001";
 
 function tocCheck(addon) {

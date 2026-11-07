@@ -24,7 +24,7 @@ one**. Addons therefore use the Retail (Mainline) API, not the Classic Era API.
   several clients.
 - AddOns list grouping, as documented on [warcraft.wiki.gg/wiki/TOC_format](https://warcraft.wiki.gg/wiki/TOC_format):
   - `## Category: <name>` puts the addon under a collapsible header. Every addon in this repo uses
-    `Pluvas' addons`.
+    `Kabobo's addons`.
   - `## Group: <main addon>` nests an addon under a main addon as a sub-list that cannot be
     collapsed. Nested groups are not supported.
   - `## IconTexture` or `## IconAtlas` sets the icon in the list.
@@ -69,7 +69,7 @@ Forever uses the **modern auction house** (`C_AuctionHouse`), with item and comm
   returned `1` (Item). Do not call it, or `CalculateCommodityDeposit`, outside the AH's own sell
   flow.
 - **Deposit: a flat 1 silver per auction**, whatever the item or stack size (confirmed in game by
-  Pluvas, 2026-11-07).
+  Kabobo, 2026-11-07).
 - **AH cut: 5%** of the sale (confirmed from AH sale invoices: 1s 50c on 30s, 25c on 5s). The
   neutral auction houses are not checked yet (15% in Classic).
 - Item links: `item:itemID:enchant:gem1:gem2:gem3:gem4:suffixID:...`. Random-suffix items
@@ -77,7 +77,7 @@ Forever uses the **modern auction house** (`C_AuctionHouse`), with item and comm
 
 ## Professions
 
-- Pluvas' Auctions reads recipes with `C_TradeSkillUI.GetAllRecipeIDs()`, `GetRecipeInfo(id)`
+- Kabobo's Auctions reads recipes with `C_TradeSkillUI.GetAllRecipeIDs()`, `GetRecipeInfo(id)`
   (`.learned`), `GetRecipeSchematic(id, false)` (`outputItemID`, `quantityMin/Max`,
   `reagentSlotSchematics[].reagents[1].itemID`, `.quantityRequired`, `.reagentType`) and
   `GetBaseProfessionInfo()`. Confirmed working in game (2026-11-07): the recipe panel showed the
@@ -103,7 +103,7 @@ yet been checked in game.
   and Sources entries from the filter menu, and wraps `Professions.GenerateCraftingDataProvider`
   to call `C_TradeSkillUI.SetShowUnlearned(false)` after *every* list build. Do not flip
   `SetShowUnlearned` to get them back: Blizzard resets it on each rebuild, and fighting that can
-  cause a rebuild loop. Pluvas' Professions reads the recipe IDs itself and shows its own panel.
+  cause a rebuild loop. Kabobo's Professions reads the recipe IDs itself and shows its own panel.
 - Blizzard's recipe list uses `C_TradeSkillUI.GetFilteredRecipeIDs()`, which follows those filters.
   For unlearned recipes the schematic form calls `C_TradeSkillUI.GetRecipeSourceText(recipeID)`,
   which returns text like `|cFFFFD200Vendor: |rName|n|cFFFFD200Zone: |r...`.
@@ -112,7 +112,7 @@ yet been checked in game.
   the first two. A function missing from the docs is not proof it is missing from the client.
 - `TradeSkillRecipeInfo` fields include `name`, `learned`, `icon`, `categoryID`, `sourceType`,
   `hyperlink`, `isDummyRecipe`. It has no field for the skill needed to learn a recipe.
-- **Confirmed in game (2026-11-07, build 70862, `/pprof dump` on Tailoring):**
+- **Confirmed in game (2026-11-07, build 70862, `/kprof dump` on Tailoring):**
   - `GetAllRecipeIDs()` exists and includes unlearned recipes: 429 unlearned for Tailoring.
   - `GetRecipeSourceText(id)` returns `nil` for unlearned recipes, and `GetRecipeInfo` has **no
     `sourceType` field** at all. Forever has no recipe source data, so sources must be learned
@@ -133,8 +133,8 @@ yet been checked in game.
 
 ## Disenchanting
 
-The client has no API for disenchant results, so Pluvas' Professions carries its own tables in
-`addons/PluvasProfessions/Disenchant.lua`. They are Classic's rules by item level, quality and
+The client has no API for disenchant results, so Kabobo's Professions carries its own tables in
+`addons/KaboboProfessions/Disenchant.lua`. They are Classic's rules by item level, quality and
 weapon or armor (uncommon armor 75% dust, 20% essence, ~5% shard; weapons swap dust and essence;
 rares give a shard; epics give shards or Nexus Crystals). Rules, not item lists, so new Forever
 items are covered as long as they have a normal item level and quality.

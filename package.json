@@ -1,7 +1,7 @@
 {
-  "name": "pluvas-addons",
+  "name": "kabobo-addons",
   "private": true,
-  "description": "Pluvas' World of Warcraft: Forever addons (monorepo). Node is only used for out-of-game tests.",
+  "description": "Kabobo's World of Warcraft: Forever addons (monorepo). Node is only used for out-of-game tests.",
   "scripts": {
     "test": "node tests/run.js",
     "install-addons": "powershell -ExecutionPolicy Bypass -File scripts/install.ps1",

@@ -165,5 +165,5 @@ end
 
 GetNormalizedRealmName = function() return "Forever" end
 UnitFactionGroup = function() return "Horde" end
-UnitName = function() return "Pluvas" end
+UnitName = function() return "Kabobo" end
 GetMoney = function() return _MONEY or 0 end

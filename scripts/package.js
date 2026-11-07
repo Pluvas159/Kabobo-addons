@@ -3,7 +3,7 @@
 //   npm run package
 //
 // For each addon: dist/<Name>-<version>.zip with <Name>/ at its root, the layout CurseForge,
-// Wago and Interface\AddOns expect. Plus dist/pluvas-addons-<release>.zip with every addon, for
+// Wago and Interface\AddOns expect. Plus dist/kabobo-addons-<release>.zip with every addon, for
 // friends who want them all in one go. <version> comes from the addon's TOC; <release> is the
 // first argument, or the highest addon version.
 const { execFileSync } = require("child_process");
@@ -44,7 +44,7 @@ for (const a of addons) {
   git("archive", "--format=zip", `--prefix=${a.name}/`, "-o", out, `HEAD:addons/${a.name}`);
   made.push(out);
 }
-const all = path.join(dist, `pluvas-addons-${release}.zip`);
+const all = path.join(dist, `kabobo-addons-${release}.zip`);
 git("archive", "--format=zip", "-o", all, "HEAD:addons");
 made.push(all);
 
