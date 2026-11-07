@@ -38,6 +38,19 @@ local function topRow(row, it)
 	PUI.SetColumns(row, units, it.item, Money(it.net), Signed(it.profit))
 end
 
+local STATUS = {
+	undercut = { "Undercut", "bad" }, matched = { "Undercut", "bad" }, lowest = { "Lowest", "good" },
+}
+
+local function mineRow(row, it)
+	local e = it.e
+	local st = STATUS[e.s]
+	local status = st and PUI.Color(st[1], st[2]) or PUI.Color("Not checked", "muted")
+	local qty = e.q and e.q > 1 and PUI.Color(" x" .. e.q, "muted") or ""
+	local name = ns.Pricing.ItemName(tonumber(tostring(it.key):match("^(%d+)")))
+	PUI.SetColumns(row, status, name .. qty, Money(e.u), Money(e.o))
+end
+
 local MODES = {
 	recent = {
 		headers = { "When", "Item", "Buyer / seller", "Amount" },
@@ -56,10 +69,30 @@ local MODES = {
 		items = function(tx) return ns.Ledger.TopItems(tx, time() - 30 * DAY) end,
 		empty = "Nothing sold or bought in the last 30 days.",
 	},
+	mine = {
+		headers = { "Status", "Item", "Your price", "Cheapest other" },
+		row = mineRow,
+		items = function() return ns.Undercut:List() end,
+		empty = "No auctions of yours known yet. Open the auction house to read them; a full scan or a search compares them.",
+	},
 }
 
 local function updateRow(row, item)
 	MODES[mode].row(row, item)
+end
+
+-- The item name behind a row of any mode.
+local function rowItemName(it)
+	if it.key then return ns.Pricing.ItemName(tonumber(tostring(it.key):match("^(%d+)"))) end
+	return it.item
+end
+
+-- Clicking a row puts its item in the auction house search box.
+local function rowClick(_, it)
+	local name = rowItemName(it)
+	if not name then return end
+	local problem = ns.Shopping.FillSearch(name)
+	if problem then ns:Print(problem) end
 end
 
 -- Window --------------------------------------------------------------------------
@@ -105,13 +138,24 @@ local function build()
 	window.recentButton:SetPoint("TOPLEFT", window.dataLine, "BOTTOMLEFT", -2, -12)
 	window.topButton = modeButton("Top items (30d)", "top", 130)
 	window.topButton:SetPoint("LEFT", window.recentButton, "RIGHT", S.gap, 0)
+	window.mineButton = modeButton("My auctions", "mine", 110)
+	window.mineButton:SetPoint("LEFT", window.topButton, "RIGHT", S.gap, 0)
+	window.craftsButton = PUI.Button(window, {
+		text = "Crafts by profit",
+		width = 130,
+		onClick = function() ns.CraftsWindow:Toggle() end,
+	})
+	window.craftsButton:SetPoint("TOP", window.recentButton, "TOP", 0, 0)
+	window.craftsButton:SetPoint("RIGHT", window, "RIGHT", -left, 0)
 
-	window.list = PUI.List(window, { kind = "columns", columns = LIST_COLUMNS, headers = true, update = updateRow })
+	window.list = PUI.List(window, {
+		kind = "columns", columns = LIST_COLUMNS, headers = true, update = updateRow, onClick = rowClick,
+	})
 	window.list:SetPoint("TOPLEFT", window.recentButton, "BOTTOMLEFT", 2, -8)
 	window.list:SetPoint("RIGHT", window, "RIGHT", -left, 0)
 	window.list:SetHeight((ROWS + 1) * S.row)
 
-	window:Footer():SetText("Sales are read from auction mail when you open your mailbox. Scroll the list with the mouse wheel.")
+	window:Footer():SetText("Click an item to search it in the auction house. Sales are read from auction mail.")
 end
 
 local function shown()
@@ -156,6 +200,7 @@ function LW:Refresh()
 	window.list:SetEmptyText(#items == 0 and m.empty or nil)
 	PUI.SetSelected(window.recentButton, mode == "recent")
 	PUI.SetSelected(window.topButton, mode == "top")
+	PUI.SetSelected(window.mineButton, mode == "mine")
 end
 
 function LW:Toggle()
@@ -164,5 +209,6 @@ function LW:Toggle()
 end
 
 ns:On("LedgerChanged", function() LW:Refresh() end)
+ns:On("UndercutsChanged", function() if mode == "mine" then LW:Refresh() end end)
 ns:On("PricesChanged", function() LW:RefreshScanInfo() end)
 ns:On("ScanStateChanged", function() LW:RefreshScanInfo() end)

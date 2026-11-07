@@ -9,7 +9,7 @@ written by Kabobo. Each addon is self-contained and ships on its own.
 
 | Addon | Folder | What it does |
 | --- | --- | --- |
-| Kabobo's Auctions | `addons/KaboboAuctions` | AH price scanning and history in tooltips, plus a sales, profit and gold ledger |
+| Kabobo's Auctions | `addons/KaboboAuctions` | AH price scanning and history in tooltips, crafts ranked by profit with a shopping list, undercut alerts, plus a sales, profit and gold ledger |
 | Kabobo's Professions | `addons/KaboboProfessions` | Lists unlearned recipes and where to learn them, beside the profession window and from trainers; disenchant advice in tooltips (with Kabobo's Auctions) |
 
 Add new addons to this table.

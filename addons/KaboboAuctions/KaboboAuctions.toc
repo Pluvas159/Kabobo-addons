@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: Kabobo's Auctions
-## Notes: Auction house price scanning, price history in tooltips, and sales & profit tracking for World of Warcraft: Forever.
+## Notes: Auction house prices and history in tooltips, crafts ranked by profit with a shopping list, undercut alerts, and sales & profit tracking for World of Warcraft: Forever.
 ## Author: Kabobo
 ## Version: 0.1.0
 ## Category: Kabobo's addons
@@ -14,10 +14,17 @@ Pricing.lua
 Vendor.lua
 Scanner.lua
 Ledger.lua
+Sales.lua
+Undercut.lua
 Crafting.lua
 Lines.lua
 Tooltip.lua
 Api.lua
+Shopping.lua
 CraftPanel.lua
 LedgerWindow.lua
+CraftsWindow.lua
+RecipeProfit.lua
+ShopWindow.lua
+AuctionLabels.lua
 ScanButton.lua

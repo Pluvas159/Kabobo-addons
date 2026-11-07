@@ -114,7 +114,9 @@ local function windowDragStop(self)
 	end
 end
 
+-- A window that opens comes to the front, so it never shows through another window.
 local function windowShow(self)
+	if self.Raise then self:Raise() end
 	if self.opts.onShow then self.opts.onShow(self) end
 end
 
@@ -161,6 +163,9 @@ function UI.Window(opts)
 	w.position = opts.position
 	w:SetSize(opts.width or 400, w.defaultHeight)
 	w:SetFrameStrata("MEDIUM")
+	-- Windows in the same strata and level draw through each other; a toplevel window comes
+	-- to the front when clicked.
+	w:SetToplevel(true)
 	w:SetClampedToScreen(true)
 	w:SetMovable(true)
 	w:EnableMouse(true)

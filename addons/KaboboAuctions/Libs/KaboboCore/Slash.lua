@@ -43,6 +43,17 @@ function ns:Slash(aliases, commands)
 	end
 	if not byName.help then add({ cmd = "help", help = "list these commands", run = printHelp }) end
 	if not byName.debug then add({ cmd = "debug", toggle = "debug", help = "debug output", hidden = true }) end
+	if not byName.log then
+		add({ cmd = "log", args = "[clear]", help = "show the last log lines (saved to disk on /reload)", run = function(rest)
+			if rest == "clear" then
+				ns.db.log = {}
+				return ns:Print("log cleared.")
+			end
+			local log = ns.db.log or {}
+			ns:Print(#log .. " log lines; the last 15 (all of them are saved on /reload):")
+			for i = math.max(1, #log - 14), #log do print("  " .. log[i]) end
+		end })
+	end
 
 	local key = ADDON:upper()
 	for i, alias in ipairs(aliases) do _G["SLASH_" .. key .. i] = alias end

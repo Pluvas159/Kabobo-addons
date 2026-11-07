@@ -22,12 +22,19 @@ L.MATCH_WINDOW = 3600     -- seconds two copies of the same mail may differ by
 
 -- Pure logic (unit tested) ------------------------------------------------
 
+-- The buyer/seller name can be empty when a mail is read before the client has loaded it; the
+-- same mail read again later has the name. An empty name matches any name.
+local function sameWho(a, b)
+	local x, y = a.who or "", b.who or ""
+	return x == y or x == "" or y == ""
+end
+
 local function sameTx(a, b, window)
 	return a.k == b.k
 		and a.item == b.item
 		and a.gross == b.gross
 		and a.qty == b.qty
-		and (a.who or "") == (b.who or "")
+		and sameWho(a, b)
 		and math.abs(a.t - b.t) <= window
 end
 
@@ -35,18 +42,20 @@ local function byTime(a, b) return a.t < b.t end
 
 -- Adds every transaction in `incoming` that is not already in `list` (sorted by t, and kept
 -- sorted). Each existing entry can match only one incoming entry, so two identical sales (same
--- buyer, item, price and time) are both kept. Only entries near the incoming times are
--- compared, so the cost does not grow with the length of the history.
+-- buyer, item, price and time) are both kept. A match that had no name yet takes the incoming
+-- one. Only entries near the incoming times are compared, so the cost does not grow with the
+-- length of the history.
+-- Returns the number added, the number of names filled in, and the added entries.
 function L.Merge(list, incoming, window)
 	window = window or L.MATCH_WINDOW
-	if #incoming == 0 then return 0 end
+	if #incoming == 0 then return 0, 0, {} end
 	local oldest = math.huge
 	for _, rec in ipairs(incoming) do
 		if rec.t < oldest then oldest = rec.t end
 	end
 	oldest = oldest - window
 
-	local n, used, added = #list, {}, 0
+	local n, used, added, filled, new = #list, {}, 0, 0, {}
 	for _, rec in ipairs(incoming) do
 		local found = false
 		for i = n, 1, -1 do
@@ -55,16 +64,45 @@ function L.Merge(list, incoming, window)
 			if not used[e] and sameTx(e, rec, window) then
 				used[e] = true
 				found = true
+				if (e.who or "") == "" and (rec.who or "") ~= "" then
+					e.who = rec.who
+					filled = filled + 1
+				end
 				break
 			end
 		end
 		if not found then
 			list[#list + 1] = rec
 			added = added + 1
+			new[#new + 1] = rec
 		end
 	end
 	if added > 0 then table.sort(list, byTime) end
-	return added
+	return added, filled, new
+end
+
+-- Removes entries without a name that have a named twin: the same mail recorded twice by an
+-- older version, once before its name had loaded. Each named entry absorbs one twin.
+-- Returns the number removed.
+function L.Dedupe(list, window)
+	window = window or L.MATCH_WINDOW
+	local drop, used = {}, {}
+	for i, a in ipairs(list) do
+		if (a.who or "") == "" then
+			for j, b in ipairs(list) do
+				if i ~= j and not used[j] and not drop[j] and (b.who or "") ~= "" and sameTx(a, b, window) then
+					drop[i], used[j] = true, true
+					break
+				end
+			end
+		end
+	end
+	local kept, removed, n = {}, 0, #list
+	for i = 1, n do
+		if drop[i] then removed = removed + 1 else kept[#kept + 1] = list[i] end
+	end
+	for i = 1, n do list[i] = kept[i] end
+	return removed
 end
 
 -- Totals for transactions at or after `since` (nil = all time).
@@ -189,11 +227,13 @@ local function readInvoice(index, now)
 end
 
 local function record(incoming)
-	local added = L.Merge(L:Transactions(), incoming)
-	if added > 0 then
-		ns:Debug("ledger: " .. added .. " new auction mails recorded")
-		changed(true)
+	local added, filled, new = L.Merge(L:Transactions(), incoming)
+	for _, e in ipairs(new) do
+		ns:Debug("ledger: new", e.k == "s" and "sale" or "purchase", e.item, "x" .. e.qty, e.gross,
+			"cut", e.cut or 0, "who '" .. (e.who or "") .. "'")
 	end
+	if filled > 0 then ns:Debug("ledger: filled in " .. filled .. " buyer/seller names") end
+	if added > 0 or filled > 0 then changed(true) end
 	return added
 end
 

@@ -48,7 +48,8 @@ ns:Slash({ "/pt", "/kabobothing" }, {
 | `ns:Send(message, ...)` | Runs the message's handlers right away |
 | `ns:Guard(name, fn)` | Wraps fn: reports errors, and turns fn off after 3 errors until `/reload` |
 | `ns:WhenLoaded(addon, fn)` | Runs fn once that addon is loaded (now, if it already is) |
-| `ns:Print(...)`, `ns:Debug(...)` | Chat output with the addon's prefix |
+| `ns:Print(...)`, `ns:Debug(...)` | Chat output with the addon's prefix. `Debug` prints only with `/<addon> debug` on |
+| `ns:Log(...)` | Adds a line to `db.log` (last 400, saved on `/reload` and logout). `Debug` and guarded errors log too; `/<addon> log` shows the end |
 | `ns.title`, `ns.version` | From the TOC |
 | `ns.realmKey`, `ns.charKey`, `ns.charName`, `ns.realm`, `ns.faction` | Set at `PLAYER_LOGIN`. `realmKey` = realm-faction (one auction house), `charKey` = realm-character |
 | `ns:Session(openEvent, closeEvent)` | `{ open }` that follows a game window. Call its API only while `open` |

@@ -610,6 +610,335 @@ test("mats use the cheaper of AH and vendor prices", function()
 	ns.db.vendor = {}
 end)
 
+test("crafts are ranked by profit, incomplete and unpriced ones last", function()
+	local prices = { [10] = 100, [20] = 50 }
+	local out = { [1] = 1000, [2] = 400, [3] = 2000, [5] = 300 }
+	local listed = { [1] = 7 }
+	local recipes = {
+		[1] = "1:1|10*2",          -- cost 200, net 1000-50-100 = 850, profit 650
+		[2] = "1:1|20*1",          -- cost 50, net 400-20-100 = 280, profit 230
+		[3] = "1:1|10*1,99*1",     -- mat 99 unpriced: profit 2000-100-100-100 = 1700, but tier 2
+		[4] = "1:1|10*1",          -- no AH price for the item: tier 3
+		[5] = "1:1|10*5",          -- cost 500, net 300-15-100 = 185, loss -315
+	}
+	local rows = CR.Rank(recipes, function(id) return prices[id] end, nil,
+		function(id) return out[id] end, function(id) return listed[id] end)
+	eq(#rows, 5)
+	eq(rows[1].id, 1); eq(rows[1].profit, 650); eq(rows[1].listed, 7); eq(rows[1].tier, 1)
+	eq(rows[2].id, 2); eq(rows[2].profit, 230)
+	eq(rows[3].id, 5); eq(rows[3].profit, -315)
+	eq(rows[4].id, 3); eq(rows[4].tier, 2); eq(rows[4].missing, 1)
+	eq(rows[5].id, 4); eq(rows[5].tier, 3); eq(rows[5].profit, nil); eq(rows[5].listed, nil)
+	eq(#CR.Rank(nil, function() end, nil, function() end), 0)
+end)
+
+test("saved professions become tabs sorted by name", function()
+	local me = CR:CharTable()
+	for k in pairs(me) do me[k] = nil end
+	me[197] = { name = "Tailoring", r = {} }
+	me[164] = { name = "Blacksmithing", r = {} }
+	local tabs = CR:Professions()
+	eq(#tabs, 2)
+	eq(tabs[1].key, 164); eq(tabs[1].text, "Blacksmithing")
+	eq(tabs[2].key, 197)
+	me[197], me[164] = nil, nil
+end)
+
+test("shopping: the cap follows the days before today, not today's listings", function()
+	local SH, P = ns.Shopping, ns.Pricing
+	local now = 100 * 86400 + 3600
+	local today = P.DayIndex(now)
+	eq(SH.CapBase(nil, now), nil)
+	eq(SH.CapBase({ h = { [today] = "900:900:3" } }, now), nil, "today alone")
+	eq(SH.CapBase({ h = { [today] = "900:900:3", [today - 1] = "40:40:1", [today - 2] = "60:60:2" } }, now), 50)
+	eq(SH.CapBase({ h = { [today - 30] = "40:40:1" } }, now), nil, "too old")
+	eq(SH.CapBase({ h = { [today - 1] = "40:40:0" } }, now), nil, "a lowest price only")
+end)
+
+test("shopping: price cap, commodity and item offers", function()
+	local SH = ns.Shopping
+	eq(SH.Cap(100, 1.2), 120)
+	eq(SH.Cap(nil, 1.2), nil)
+	eq(SH.Cap(0, 1.2), nil)
+
+	-- cheapest first, stops at the cap, skips your own listings, never more than needed
+	local listings = { { 90, 5, true }, { 100, 10 }, { 110, 10 }, { 130, 50 } }
+	local qty, total = SH.CommodityOffer(listings, 15, 120)
+	eq(qty, 15); eq(total, 10 * 100 + 5 * 110)
+	qty, total = SH.CommodityOffer(listings, 100, 120)
+	eq(qty, 20); eq(total, 10 * 100 + 10 * 110)
+	qty = SH.CommodityOffer(listings, 10, 50)
+	eq(qty, 0)
+
+	-- item auctions: cheapest per unit under the cap, preferring one that does not overbuy
+	local auctions = {
+		{ 1, 1000, 20 },        -- 50 each, but 20 > 5 needed
+		{ 2, 330, 5 },          -- 66 each, fits
+		{ 3, 300, 5, true },    -- own auction
+		{ 4, 2000, 5 },         -- 400 each: over the cap
+	}
+	eq(SH.ItemOffer(auctions, 5, 120)[1], 2)
+	eq(SH.ItemOffer(auctions, 20, 120)[1], 1)
+	eq(SH.ItemOffer(auctions, 5, 40), nil)
+end)
+
+test("shopping plan: mats to buy, crafts to do, bags used first", function()
+	local SH = ns.Shopping
+	local prices = { [2589] = 100, [2320] = 50 }
+	local recipes = { [2996] = "1:1|2589*2" }
+	local priceOf = function(id) return prices[id] end
+	local recipeOf = function(id) return recipes[id] end
+	local bags = { [2589] = 4 }
+	local ownedOf = function(id) return bags[id] or 0 end
+
+	-- 3 crafts of a bag (4238) = 3 bolts + 1 thread each; a bolt = 2 cloth
+	local buy, steps = SH.Plan("2:2|2996*3,2320*1", 3, priceOf, recipeOf, ownedOf, 4238)
+	local byId = {}
+	for _, m in ipairs(buy) do byId[m.id] = m end
+	eq(byId[2589].need, 18)   -- 9 bolts x 2 cloth
+	eq(byId[2589].have, 4)
+	eq(byId[2320].need, 3)
+	eq(byId[2996], nil, "bolts are crafted, not bought")
+	eq(#steps, 2)
+	eq(steps[1].id, 2996); eq(steps[1].crafts, 9); eq(steps[1].depth, 1)
+	eq(steps[2].id, 4238); eq(steps[2].crafts, 3); eq(steps[2].depth, 0, "the recipe itself last")
+
+	-- bolts in the bags mean fewer crafts and less cloth
+	bags[2996] = 4
+	buy, steps = SH.Plan("2:2|2996*3,2320*1", 3, priceOf, recipeOf, ownedOf, 4238)
+	byId = {}
+	for _, m in ipairs(buy) do byId[m.id] = m end
+	eq(steps[1].crafts, 5); eq(steps[1].have, 4)
+	eq(byId[2589].need, 10)
+
+	-- a bolt cheaper on the AH than its cloth is bought instead
+	prices[2996] = 150
+	buy, steps = SH.Plan("2:2|2996*3,2320*1", 3, priceOf, recipeOf, ownedOf, 4238)
+	byId = {}
+	for _, m in ipairs(buy) do byId[m.id] = m end
+	eq(byId[2996].need, 9); eq(byId[2996].have, 4)
+	eq(byId[2589], nil)
+	eq(#steps, 1)
+
+	-- a recipe making 2 per craft needs half the crafts
+	prices[2996] = nil
+	recipes[2996] = "2:2|2589*2"
+	bags = {}
+	buy, steps = SH.Plan("1:1|2996*3", 1, priceOf, recipeOf, ownedOf, 4238)
+	eq(steps[1].crafts, 2); eq(steps[1].makes, 2)
+	eq(buy[1].need, 4)
+end)
+
+test("shopping finds mats for the auction house's Buy Now and counts what you buy", function()
+	local SH = ns.Shopping
+	local me = CR:CharTable()
+	me[197] = { name = "Tailoring", r = { [5000] = "1:1|2589*20,2592*2" } }
+	local items = ns.Pricing:Realm().items
+	items["2589"] = { m = 100, t = time() }
+	-- cheaper in total and per unit: listed second. Its cap comes from yesterday's 50.
+	items["2592"] = { m = 50, t = time(), h = { [ns.Pricing.DayIndex(time()) - 1] = "50:50:1" } }
+	GetItemCount = function(id) return id == 2589 and 5 or 0 end
+	C_AuctionHouse = {
+		HasFullCommoditySearchResults = function() return true end,
+		GetNumCommoditySearchResults = function() return 2 end,
+		GetCommoditySearchResultInfo = function(_, i)
+			if i == 1 then return { unitPrice = 100, quantity = 10 } end
+			return { unitPrice = 130, quantity = 5 }   -- over the 120 cap (market stays 100)
+		end,
+	}
+	local box = CreateFrame("EditBox")
+	AuctionHouseFrame = { SearchBar = { SearchBox = box } }
+	_FIRE("AUCTION_HOUSE_SHOW")
+
+	truthy(SH:Start(5000, 1), "list made")
+	local cloth = SH.list.mats[1]
+	eq(cloth.id, 2589); eq(cloth.need, 20)
+	eq(SH.Remaining(cloth), 15, "5 in bags")
+	eq(SH.current, cloth)
+	eq(SH:ButtonText(), "Find " .. ns.Pricing.ItemName(2589))
+
+	SH:Find()
+	eq(box:GetText(), ns.Pricing.ItemName(2589), "name in the search box")
+
+	-- the listings the auction house shows: only those under the cap count
+	_FIRE("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+	eq(SH.offer.qty, 10); eq(SH.offer.total, 1000)
+	truthy(SH.message:find("quantity to 10", 1, true), "says how many")
+	truthy(SH.message:find("Only 10 of 15", 1, true), "says the rest is over the cap")
+
+	-- the quote is over the cap: a warning before you confirm
+	_FIRE("COMMODITY_PRICE_UPDATED", 400, 4000)
+	truthy(SH.message:find("over your cap", 1, true), "warns")
+
+	-- a purchase through the auction house's own buttons counts once it succeeds
+	SH.OnConfirmCommodities(2589, 10)
+	eq(SH.Bought(2589), 0, "not before the answer")
+	_FIRE("COMMODITY_PURCHASE_SUCCEEDED")
+	eq(SH.Bought(2589), 10)
+	eq(SH.Remaining(cloth), 5)
+	eq(SH.current, cloth, "still 5 to buy")
+	_FIRE("COMMODITY_PURCHASE_SUCCEEDED")
+	eq(SH.Bought(2589), 10, "one answer, one count")
+
+	-- a failed purchase does not count
+	SH.OnConfirmCommodities(2589, 5)
+	_FIRE("COMMODITY_PURCHASE_FAILED")
+	_FIRE("COMMODITY_PURCHASE_SUCCEEDED")
+	eq(SH.Bought(2589), 10)
+
+	-- something not on the list does not count
+	SH.OnConfirmCommodities(9999, 3)
+	_FIRE("COMMODITY_PURCHASE_SUCCEEDED")
+	eq(SH.Bought(9999), 0)
+
+	-- the rest bought: on to the next mat
+	SH.OnConfirmCommodities(2589, 5)
+	_FIRE("COMMODITY_PURCHASE_SUCCEEDED")
+	eq(SH.current.id, 2592, "next mat")
+
+	-- skip goes on to the craft step, and round to the skipped mat
+	SH:Skip()
+	eq(SH.current.kind, "craft"); eq(SH.current.id, 5000)
+	eq(SH:ButtonText(), "Craft " .. ns.Pricing.ItemName(5000) .. " (1x)")
+	SH:Skip()
+	eq(SH.current.id, 2592, "back to the skipped mat")
+
+	-- more crafts: what was bought and the first bag count still hold
+	GetItemCount = function(id) return id == 2589 and 15 or 0 end   -- mail collected
+	SH:SetCrafts(2)
+	eq(SH.list.mats[1].need, 40)
+	eq(SH.list.mats[1].have, 5)
+	eq(SH.Remaining(SH.list.mats[1]), 20)
+
+	-- nothing under the cap
+	SH:Find(SH.list.mats[2])
+	C_AuctionHouse.GetNumCommoditySearchResults = function() return 1 end
+	C_AuctionHouse.GetCommoditySearchResultInfo = function() return { unitPrice = 900, quantity = 5 } end
+	_FIRE("COMMODITY_SEARCH_RESULTS_UPDATED", SH.current.id)
+	eq(SH.offer, nil)
+	truthy(SH.message:find("Nothing at or under your cap", 1, true), "says why")
+
+	-- not enough gold
+	GetMoney = function() return 50 end
+	C_AuctionHouse.GetCommoditySearchResultInfo = function() return { unitPrice = 100, quantity = 50 } end
+	_FIRE("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)   -- not the current mat: ignored
+	SH:Find(SH.list.mats[1])
+	_FIRE("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+	truthy(SH.message:find("Not enough money", 1, true), "money message")
+	GetMoney = nil
+
+	-- the auction house refusing
+	Enum.AuctionHouseError = { NotEnoughMoney = 4 }
+	_FIRE("AUCTION_HOUSE_SHOW_ERROR", 4)
+	eq(SH.message, "The auction house refused: Not enough money. Nothing was bought.")
+	Enum.AuctionHouseError = nil
+
+	SH:Clear()
+	_FIRE("AUCTION_HOUSE_CLOSED")
+	C_AuctionHouse, GetItemCount, AuctionHouseFrame = nil, nil, nil
+	me[197] = nil
+	items["2589"], items["2592"] = nil, nil
+end)
+
+test("undercut: compare your price with other listings", function()
+	local U = ns.Undercut
+	-- strictly cheaper by someone else
+	local s, mine, other = U.Compare({ { 90, 5 }, { 100, 10, true } })
+	eq(s, "undercut"); eq(mine, 100); eq(other, 90)
+	-- same price, someone else: undercut too, the later auction sells first (only known when own
+	-- rows are marked)
+	s, mine, other = U.Compare({ { 100, 5 }, { 100, 10, true }, { 120, 1 } })
+	eq(s, "undercut"); eq(mine, 100); eq(other, 100)
+	-- you are the cheapest
+	s, mine, other = U.Compare({ { 100, 10, true }, { 120, 1 } })
+	eq(s, "lowest"); eq(other, 120)
+	-- no own rows: the saved price counts, only strictly cheaper is an undercut
+	eq((U.Compare({ { 100, 3 } }, 100)), "lowest")
+	eq((U.Compare({ { 99, 3 } }, 100)), "undercut")
+	-- you list none
+	eq(U.Compare({ { 99, 3 } }), nil)
+end)
+
+test("undercut: owned auctions are read, and a full scan reports what changed", function()
+	local U = ns.Undercut
+	local mine = U:Mine()
+	for k in pairs(mine) do mine[k] = nil end
+	Enum.AuctionStatus = { Active = 0, Sold = 1 }
+	Enum.ItemCommodityStatus = { Unknown = 0, Item = 1, Commodity = 2 }
+	local owned = {
+		{ itemKey = { itemID = 2589 }, status = 0, quantity = 20, buyoutAmount = 100 },   -- commodity: per unit
+		{ itemKey = { itemID = 2589 }, status = 0, quantity = 10, buyoutAmount = 120 },
+		{ itemKey = { itemID = 4306 }, status = 0, quantity = 2, buyoutAmount = 1000 },   -- item: whole auction
+		{ itemKey = { itemID = 2996 }, status = 1, quantity = 1, buyoutAmount = 500 },    -- sold
+	}
+	C_AuctionHouse = {
+		GetNumOwnedAuctions = function() return #owned end,
+		GetOwnedAuctionInfo = function(i) return owned[i] end,
+		HasFullOwnedAuctionResults = function() return true end,
+		GetItemCommodityStatus = function(id) return id == 2589 and 2 or 1 end,
+	}
+	_FIRE("AUCTION_HOUSE_SHOW")
+	_FIRE("OWNED_AUCTIONS_UPDATED")
+	eq(mine["2589"].u, 100); eq(mine["2589"].q, 30)
+	eq(mine["4306"].u, 500)
+	eq(mine["2996"], nil, "sold auctions are not listed")
+
+	local alerts = U.FromScan({
+		["2589"] = { { 95, 50 }, { 100, 20, true } },   -- undercut
+		["4306"] = { { 500, 2, true }, { 700, 1 } },    -- lowest
+		["9999"] = { { 50, 1 } },                       -- not yours
+	}, time())
+	eq(#alerts, 1); eq(alerts[1], "2589")
+	eq(mine["2589"].s, "undercut"); eq(mine["2589"].o, 95)
+	eq(mine["4306"].s, "lowest")
+	eq(mine["9999"], nil)
+	-- the same undercut again is not news
+	eq(#U.FromScan({ ["2589"] = { { 95, 50 }, { 100, 20, true } } }, time()), 0)
+	eq(U:List()[1].key, "2589", "undercut first")
+
+	-- the Auctions tab label
+	local AL = ns.AuctionLabels
+	eq(AL.Text({ itemKey = { itemID = 2589 }, status = 0 }), PUI.Color("Undercut ", "bad") .. PUI.Money(95))
+	eq(AL.Text({ itemKey = { itemID = 4306 }, status = 0 }), PUI.Color("Lowest", "good"))
+	eq(AL.Text({ itemKey = { itemID = 2589 }, status = 1 }), nil, "sold")
+
+	_FIRE("AUCTION_HOUSE_CLOSED")
+	C_AuctionHouse = nil
+	for k in pairs(mine) do mine[k] = nil end
+end)
+
+test("a mail read before its name loaded is not recorded twice", function()
+	local list = {}
+	local early = { k = "s", item = "Breastplate", qty = 1, gross = 16000, cut = 800, who = "", t = 1000 }
+	eq((L.Merge(list, { early })), 1)
+	local later = { k = "s", item = "Breastplate", qty = 1, gross = 16000, cut = 800, who = "Krasnoff", t = 1001 }
+	local added, filled = L.Merge(list, { later })
+	eq(added, 0); eq(filled, 1)
+	eq(#list, 1); eq(list[1].who, "Krasnoff")
+
+	-- duplicates saved by the old version are cleaned up
+	local old = {
+		{ k = "s", item = "Breastplate", qty = 1, gross = 16000, who = "", t = 1000 },
+		{ k = "s", item = "Breastplate", qty = 1, gross = 16000, who = "Krasnoff", t = 1001 },
+		{ k = "b", item = "Tin Ore", qty = 4, gross = 756, who = "Oxide", t = 2000 },
+		{ k = "b", item = "Tin Ore", qty = 4, gross = 756, who = "", t = 2000 },
+		{ k = "b", item = "Iridescent Pearl", qty = 4, gross = 15929, t = 3000 },   -- no name ever: kept
+	}
+	eq(L.Dedupe(old), 2)
+	eq(#old, 3)
+	eq(old[1].who, "Krasnoff"); eq(old[2].who, "Oxide"); eq(old[3].item, "Iridescent Pearl")
+end)
+
+test("the log keeps the last lines and errors", function()
+	ns.db.log = {}
+	ns:Log("hello", 1, nil)
+	truthy(ns.db.log[1]:find("hello 1 nil", 1, true), "logged")
+	for i = 1, ns.LOG_LINES + 5 do ns:Log("line", i) end
+	eq(#ns.db.log, ns.LOG_LINES)
+	truthy(ns.db.log[#ns.db.log]:find("line " .. (ns.LOG_LINES + 5), 1, true), "newest last")
+	ns.db.log = {}
+end)
+
 test("long mat lists end in a '+N more' line", function()
 	local mats = {}
 	for i = 1, 13 do mats[i] = { id = i, qty = 1 } end
@@ -801,4 +1130,88 @@ test("API: how old a price is", function()
 	eq(api.StaleAge(1000, 1000 + 86400), nil)
 	eq(api.StaleAge(1000, 1000 + 4 * 86400), 4 * 86400)
 	eq(api.StaleAge(nil), nil)
+end)
+
+test("sales: listings that left the auction house between two scans", function()
+	local Sales = ns.Sales
+	-- { unit, qty, yours, seller }
+	local before = Sales.Snapshot({ { 100, 5, nil, "A" }, { 100, 5, nil, "A" }, { 120, 1, nil, "B" } })
+	eq(before["100|5|A"], 2)
+	local after = Sales.Snapshot({ { 100, 5, nil, "A" }, { 90, 3, nil, "C" } })
+	eq(Sales.Gone(before, after), 6, "one stack of 5 and the single one went")
+	eq(Sales.Gone(after, after), 0)
+
+	-- rate over the observations of the last KEEP_DAYS days
+	local now = 1000000
+	eq(Sales.Rate({}, now), nil)
+	near(Sales.Rate({ { now, 6, 12 }, { now - 3600, 2, 12 } }, now), 8)     -- 8 in 24 h
+	eq(Sales.Rate({ { now - 30 * 86400, 50, 24 } }, now), nil, "too old")
+	eq(Sales.Text(nil), nil); eq(Sales.Text(8), "~8"); eq(Sales.Text(0.5), "~0.5"); eq(Sales.Text(12.4), "~12")
+
+	-- recording: only tracked items, only scans 1-36 h apart
+	local sales, tracked = {}, { ["2996"] = true }
+	eq(Sales.Record(sales, { ["2996"] = { { 100, 5, nil, "A" }, { 100, 5, nil, "A" } }, ["1"] = { { 1, 1 } } }, tracked, now), 0)
+	eq(sales["1"], nil, "not tracked")
+	eq(Sales.Record(sales, { ["2996"] = { { 100, 5, nil, "A" } } }, tracked, now + 600), 0, "10 minutes: too soon")
+	eq(Sales.Record(sales, { ["2996"] = { { 100, 5, nil, "A" } } }, tracked, now + 6 * 3600), 1)
+	eq(sales["2996"].g[1][2], 5)
+	eq(sales["2996"].g[1][3], 6)
+	near(Sales.Rate(sales["2996"].g, now + 6 * 3600), 20)
+	-- the item gone from the auction house entirely
+	eq(Sales.Record(sales, {}, tracked, now + 12 * 3600), 1)
+	eq(sales["2996"].g[2][2], 5)
+	eq(Sales.Record(sales, {}, tracked, now + 60 * 3600), 0, "two days apart: not compared")
+end)
+
+test("crafts can be ranked by profit per day", function()
+	local prices = { [10] = 100 }
+	local out = { [1] = 1000, [2] = 600, [3] = 2000 }
+	local rates = { [1] = 1, [2] = 10 }
+	local recipes = { [1] = "1:1|10*1", [2] = "1:1|10*1", [3] = "1:1|10*1" }
+	local priceOf = function(id) return prices[id] end
+	local outputPrice = function(id) return out[id] end
+	local rateOf = function(id) return rates[id] end
+	-- profits: 1 -> 1000-50-100-100 = 750, 2 -> 600-30-100-100 = 370, 3 -> 1700 (no rate)
+	local rows = ns.Crafting.Rank(recipes, priceOf, nil, outputPrice, nil, rateOf)
+	eq(rows[1].id, 3); eq(rows[2].id, 1); eq(rows[3].id, 2)
+	eq(rows[2].rate, 1); eq(rows[2].perDay, 750)
+	rows = ns.Crafting.Rank(recipes, priceOf, nil, outputPrice, nil, rateOf, "day")
+	eq(rows[1].id, 2, "370 x 10 a day"); eq(rows[1].perDay, 3700)
+	eq(rows[2].id, 1)
+	eq(rows[3].id, 3, "no rate: after the ones with one")
+end)
+
+test("a crafted mat that is cheaper on the auction house is bought", function()
+	local prices = { [2589] = 100, [2320] = 50, [2996] = 150 }
+	local recipes = { [2996] = "1:1|2589*2" }
+	local priceOf = function(id) return prices[id] end
+	local recipeOf = function(id) return recipes[id] end
+	-- bolt: 150 on the AH, 200 to craft
+	eq((ns.Crafting.CostPerCraft("1:1|2996*3,2320*1", priceOf, recipeOf)), 500)
+	prices[2996] = 250
+	eq((ns.Crafting.CostPerCraft("1:1|2996*3,2320*1", priceOf, recipeOf)), 650)
+end)
+
+test("recipe list label: profit, unpriced mark and sales", function()
+	local RP = ns.RecipeProfit
+	eq(RP.Text(nil), nil)
+	eq(RP.Text({ cost = 100 }), nil, "no AH price for the item")
+	local text = RP.Text({ profit = 500, missing = 0 })
+	truthy(text:find(PUI.Money(500), 1, true), "profit")
+	text = RP.Text({ profit = 500, missing = 1 }, 4)
+	truthy(text:find("*", 1, true), "unpriced mark")
+	truthy(text:find("~4/d", 1, true), "sales")
+end)
+
+test("saved recipe IDs and profession names for craft steps", function()
+	local me = ns.Crafting:CharTable()
+	ns.Crafting:Store(186, "Mining", { [2840] = "1:1|2770*1" }, true, { [2840] = 2657 })
+	local id, prof = ns.Crafting:CraftInfo(2840)
+	eq(id, 2657); eq(prof, "Mining")
+	-- an incomplete read adds IDs
+	ns.Crafting:Store(186, "Mining", { [3576] = "1:1|2771*1" }, false, { [3576] = 3304 })
+	eq((ns.Crafting:CraftInfo(3576)), 3304)
+	eq((ns.Crafting:CraftInfo(2840)), 2657)
+	eq(ns.Crafting:CraftInfo(1), nil)
+	me[186] = nil
 end)

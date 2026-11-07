@@ -40,6 +40,11 @@ one**. Addons therefore use the Retail (Mainline) API, not the Classic Era API.
   threat, auras, enemy spells). Do not build features that read them in combat.
 - **Hardware events**: posting, bidding, buying out and cancelling auctions each need a real key
   or mouse press. Never chain or automate them.
+- **AH purchases are protected**: `C_AuctionHouse.StartCommoditiesPurchase` gives
+  ADDON_ACTION_BLOCKED even when called from a click on an addon button (seen in game). Treat
+  `ConfirmCommoditiesPurchase` and `PlaceBid` the same: only Blizzard's own buttons can buy.
+  Addons can still search (`SendSearchQuery` works), fill the search box, and `hooksecurefunc`
+  the purchase functions to see what was bought.
 - Taint: never replace Blizzard secure functions or frames. Use `hooksecurefunc` and `HookScript`.
 
 ## Auction house
@@ -75,6 +80,27 @@ Forever uses the **modern auction house** (`C_AuctionHouse`), with item and comm
 - Item links: `item:itemID:enchant:gem1:gem2:gem3:gem4:suffixID:...`. Random-suffix items
   ("of the Bear") share an itemID, so key them by `itemID:suffixID`.
 
+- **Auction house UI** (read from the `forever` branch of Gethe/wow-ui-source, November 2026; not
+  yet checked in game): Forever uses the shared Mainline `AuctionHouseFrame`. Its `Camelot/`
+  folder only overrides browse categories (`Blizzard_AuctionData.lua`). Your auctions are
+  `AuctionHouseFrame.AuctionsFrame.AllAuctionsList`, a ScrollBox with a table builder (columns
+  Name fill, Bid 120, Buyout 120, Time left 50), refreshed through `RefreshScrollFrame()`. Rows
+  carry `rowData` from `C_AuctionHouse.GetOwnedAuctionInfo`. Whether an owned commodity's
+  `buyoutAmount` is per unit is not confirmed; Kabobo's Auctions assumes it is.
+- **Addons cannot buy at all (seen in game 2026-11-07):** `StartCommoditiesPurchase` called from
+  an event handler got no answer; called from a click on an addon button it raised
+  `ADDON_ACTION_BLOCKED KaboboAuctions StartCommoditiesPurchase()`. So the shopping list only fills
+  `AuctionHouseFrame.SearchBar.SearchBox` (Browse tab) and leaves searching and buying to
+  Blizzard's buttons. It hooks `ConfirmCommoditiesPurchase` and `PlaceBid` with `hooksecurefunc`
+  to count purchases (`COMMODITY_PURCHASE_SUCCEEDED`, `AUCTION_HOUSE_PURCHASE_COMPLETED`). Not yet
+  confirmed in game: that filling the search box taints nothing (watch for `ADDON_ACTION_BLOCKED`
+  in `/ka log`), and `C_AuctionHouse.GetAuctionInfoByID` for item buyouts.
+- **Undercut labels** in the Auctions tab work (confirmed in game 2026-11-07); they show the result
+  of the last scan or search of each item.
+- **Sellers in full scans**: the "Gone/day" estimate keys auctions by unit price, stack size and
+  `ownerFullName`/`owner` from `GetReplicateItemInfo`. Not confirmed: whether commodity rows carry a
+  seller; without one, same-price stacks of the same size are matched by count, which still works.
+
 ## Professions
 
 - Kabobo's Auctions reads recipes with `C_TradeSkillUI.GetAllRecipeIDs()`, `GetRecipeInfo(id)`
@@ -89,6 +115,15 @@ Forever uses the **modern auction house** (`C_AuctionHouse`), with item and comm
   the bottom edge of the schematic form, so anything drawn there must stay above it.
 - Not confirmed: whether `GetBaseProfessionInfo().professionID` equals the skill line from
   `GetProfessionInfo`, so profession pruning matches on name as well.
+- **Recipe list** (read from Mainline; not yet checked in game):
+  `ProfessionsFrame.CraftingPage.RecipeList.ScrollBox` holds the rows; a recipe row's
+  `GetElementData():GetData().recipeInfo` is its `TradeSkillRecipeInfo`. Kabobo's Auctions draws
+  a profit label on each row (`ScrollUtil.AddAcquiredFrameCallback`, `OnScroll`,
+  `OnDataRangeChanged`) and fills `RecipeList.SearchBox` for the shopping list's craft steps.
+  Crafting (`C_TradeSkillUI.CraftRecipe`) is left to Blizzard's Create button, like buying.
+- Crafts are counted with `UNIT_SPELLCAST_SUCCEEDED("player", castGUID, spellID)`, assuming a
+  recipe ID equals its craft's spell ID as on Mainline (not yet confirmed on Forever). Recipes
+  saved before recipe IDs were kept are counted from the crafted item's bag count instead.
 
 ### Read from Blizzard's Forever UI source
 

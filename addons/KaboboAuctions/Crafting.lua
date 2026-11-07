@@ -41,7 +41,8 @@ C.MAX_DEPTH = 8   -- deepest chain of crafted mats followed (bolt -> cloth -> ..
 -- Cost of one unit of an item. If recipeOf(itemID) gives a recipe (the character can craft it),
 -- it is priced from its own mats, recursively down to the base mats; otherwise priceOf(itemID)
 -- is used. A crafted mat whose own mats cannot all be priced falls back to its AH price when it
--- has one. Cycles (A from B, B from A) stop at the AH price.
+-- has one, and so does a crafted mat that is cheaper to buy. Cycles (A from B, B from A) stop
+-- at the AH price.
 -- Returns cost (a float, nil when nothing could be priced), the number of unpriced base mats,
 -- and the base mats used for one unit: { [itemID] = quantity } (quantities can be fractional
 -- when a craft makes several items).
@@ -71,7 +72,12 @@ function C.UnitCost(itemID, priceOf, recipeOf, seen, depth)
 	local yield = (lo + hi) / 2
 	if yield <= 0 then yield = 1 end
 	for id, q in pairs(used) do used[id] = q / yield end
-	if missing == 0 then return total / yield, 0, used end
+	if missing == 0 then
+		-- A mat that is cheaper to buy than to craft is bought.
+		local price = depth > 0 and priceOf(itemID)
+		if price and price < total / yield then return price, 0, { [itemID] = 1 } end
+		return total / yield, 0, used
+	end
 	if depth > 0 then
 		local price = priceOf(itemID)
 		if price then return price, 0, { [itemID] = 1 } end
@@ -196,6 +202,40 @@ function C.AddDisenchant(r, gross, missing, seen)
 	return r
 end
 
+-- Every recipe in `recipes` ({ [outputItemID] = recipe }) with its CraftSummary plus id, listed,
+-- rate, perDay and tier, most profitable first. outputPrice(itemID) gives the item's AH price;
+-- listedOf(itemID) (optional) how many are listed; rateOf(itemID) (optional) how many leave the
+-- AH per day. Tiers: 1 = fully priced, 2 = some mats unpriced (the profit is too high, so these
+-- come after the fully priced ones), 3 = no profit (no AH price for the item, or no mat priced).
+-- sort = "day" ranks by profit per day (profit x rate) within a tier: recipes with a rate and a
+-- positive profit first, then the rest by profit. Otherwise by profit.
+function C.Rank(recipes, priceOf, recipeOf, outputPrice, listedOf, rateOf, sort)
+	local rows = {}
+	for id, recipe in pairs(recipes or {}) do
+		local s = C.CraftSummary(recipe, priceOf, recipeOf, outputPrice(id))
+		s.id = id
+		s.mats = nil
+		s.listed = listedOf and listedOf(id) or nil
+		s.rate = rateOf and rateOf(id) or nil
+		s.perDay = s.profit and s.rate and s.profit * s.rate or nil
+		s.tier = not s.profit and 3 or (s.missing > 0 and 2 or 1)
+		rows[#rows + 1] = s
+	end
+	local byDay = sort == "day"
+	table.sort(rows, function(a, b)
+		if a.tier ~= b.tier then return a.tier < b.tier end
+		if byDay then
+			local da = a.perDay and a.perDay > 0 and a.perDay or nil
+			local db = b.perDay and b.perDay > 0 and b.perDay or nil
+			if (da ~= nil) ~= (db ~= nil) then return da ~= nil end
+			if da and da ~= db then return da > db end
+		end
+		if a.profit and b.profit and a.profit ~= b.profit then return a.profit > b.profit end
+		return a.id < b.id
+	end)
+	return rows
+end
+
 -- Turn a C_TradeSkillUI recipe schematic into (outputItemID, recipe string), or nil.
 -- Only basic reagents count: optional and finishing reagents are not part of the base cost.
 function C.FromSchematic(schematic)
@@ -233,6 +273,12 @@ function C.AHPrice(itemID)
 	return entry.m or entry.n, entry.t
 end
 
+-- Quantity listed on the AH at the last scan that saw the item, or nil.
+function C.AHListed(itemID)
+	local entry = P:Get(tostring(itemID))
+	return entry and entry.q or nil
+end
+
 -- Price per unit of a mat: the cheaper of its AH price and what a vendor charges for it. The
 -- second result is "vendor" when the vendor price is used; the third is when an AH price was
 -- last seen.
@@ -251,6 +297,21 @@ function C:CharTable()
 	return ns.Ensure(ns.db.crafts, ns.realmKey, ns.charName)
 end
 
+-- This character's saved professions as tabs: { { key = professionID, text = name }, ... }, by name.
+function C:Professions()
+	local list = {}
+	local me = C:CharTable()
+	if not me then return list end
+	for id, prof in pairs(me) do
+		list[#list + 1] = { key = id, text = prof.name or tostring(id) }
+	end
+	table.sort(list, function(a, b)
+		if a.text ~= b.text then return a.text < b.text end
+		return tostring(a.key) < tostring(b.key)
+	end)
+	return list
+end
+
 -- Recipe string for the item if this character can craft it, else nil.
 function C:RecipeFor(itemID)
 	local me = itemID and C:CharTable()
@@ -262,18 +323,33 @@ function C:RecipeFor(itemID)
 	return nil
 end
 
--- Store one profession's recipes. A complete read replaces what was saved; an incomplete one
--- (some client calls failed) only adds to it, so a client hiccup cannot wipe good data.
-function C:Store(professionID, name, recipes, complete)
+-- Store one profession's recipes ({ [outputItemID] = recipe }) and their recipe IDs
+-- ({ [outputItemID] = recipeID }, optional). A complete read replaces what was saved; an
+-- incomplete one (some client calls failed) only adds to it, so a client hiccup cannot wipe good
+-- data.
+function C:Store(professionID, name, recipes, complete, ids)
 	local me = C:CharTable()
 	if not me then return end
 	local old = me[professionID]
 	if not complete and old and old.r then
 		for id, r in pairs(recipes) do old.r[id] = r end
+		old.ids = old.ids or {}
+		for id, rid in pairs(ids or {}) do old.ids[id] = rid end
 		old.name = name or old.name
 		return
 	end
-	me[professionID] = { name = name, r = recipes }
+	me[professionID] = { name = name, r = recipes, ids = ids or {} }
+end
+
+-- The recipe ID and profession name this character crafts the item with, or nil. The recipe ID
+-- is nil for data saved before IDs were kept, until that profession window is opened again.
+function C:CraftInfo(itemID)
+	local me = itemID and C:CharTable()
+	if not me then return nil end
+	for _, prof in pairs(me) do
+		if prof.r and prof.r[itemID] then return prof.ids and prof.ids[itemID], prof.name end
+	end
+	return nil
 end
 
 -- Drop professions this character no longer has. Only runs when the client lists at least one
@@ -292,6 +368,7 @@ function C:PruneProfessions()
 	for professionID, prof in pairs(me) do
 		if not have[professionID] and not (prof.name and have[prof.name]) then
 			me[professionID] = nil
+			ns:Send("CraftsChanged")
 		end
 	end
 end
@@ -326,7 +403,7 @@ function C:Scan()
 	if type(ids) ~= "table" or #ids == 0 then return end
 
 	scanning = true
-	local recipes, count = {}, 0
+	local recipes, recipeIDs, count = {}, {}, 0
 	ns:Spread({
 		name = "Crafting scan",
 		count = #ids,
@@ -339,13 +416,15 @@ function C:Scan()
 			local out, recipe = C.FromSchematic(api:Call(TS.GetRecipeSchematic, ids[i], false))
 			if out then
 				recipes[out] = recipe
+				recipeIDs[out] = ids[i]
 				count = count + 1
 			end
 		end,
 		done = function(ok)
 			scanning = false
 			if not ok then return end   -- keep what was saved; the next window update retries
-			C:Store(professionID, name, recipes, api.failures == 0)
+			C:Store(professionID, name, recipes, api.failures == 0, recipeIDs)
+			ns:Send("CraftsChanged")
 			if api.failures > 0 then ns:Debug("crafting: " .. api.failures .. " recipe reads failed") end
 			ns:Debug("crafting: stored", count, "recipes for profession", professionID)
 		end,

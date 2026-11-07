@@ -44,13 +44,21 @@ end
 
 -- Full scan ---------------------------------------------------------------
 
--- Turns one replicate row into (itemKey, unit price, quantity), or nil for rows without a
--- buyout or item data. Replicate buyouts are for the whole stack.
+-- Whether a replicate row's seller is this character (name, or name-realm).
+function S.IsMe(owner, ownerFullName)
+	local me = ns.charName
+	if not me then return false end
+	return owner == me or ownerFullName == me or ownerFullName == (me .. "-" .. tostring(ns.realm))
+end
+
+-- Turns one replicate row into (itemKey, unit price, quantity, yours, seller), or nil for rows
+-- without a buyout or item data. Replicate buyouts are for the whole stack.
 local function readRow(index)
-	local _, _, qty, _, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID = C_AuctionHouse.GetReplicateItemInfo(index)
+	local _, _, qty, _, _, _, _, _, _, buyout, _, _, _, owner, ownerFullName, _, itemID = C_AuctionHouse.GetReplicateItemInfo(index)
 	if not (itemID and qty and qty > 0 and buyout and buyout > 0) then return nil end
 	local link = C_AuctionHouse.GetReplicateItemLink(index)
-	return (link and P.ItemKeyFromLink(link)) or P.ItemKey(itemID), buyout / qty, qty
+	return (link and P.ItemKeyFromLink(link)) or P.ItemKey(itemID), buyout / qty, qty, S.IsMe(owner, ownerFullName) or nil,
+		ownerFullName or owner or ""
 end
 
 -- Reads every row over several frames, then records one entry per item.
@@ -58,7 +66,7 @@ local function process(count)
 	cancelTimers()
 	setState("processing", 0)
 	local started = debugprofilestop and debugprofilestop() or 0
-	local grouped = {}   -- itemKey -> { { unit, qty }, ... }
+	local grouped = {}   -- itemKey -> { { unit, qty, yours, seller }, ... }
 	local seen, skipped = 0, 0
 
 	ns:Spread({
@@ -67,7 +75,7 @@ local function process(count)
 		size = S.CHUNK,
 		alive = function() return ah.open end,
 		step = function(i)
-			local key, unit, qty = readRow(i - 1)   -- replicate rows start at 0
+			local key, unit, qty, mine, seller = readRow(i - 1)   -- replicate rows start at 0
 			if not key then
 				skipped = skipped + 1
 				return
@@ -77,7 +85,7 @@ local function process(count)
 				list = {}
 				grouped[key] = list
 			end
-			list[#list + 1] = { unit, qty }
+			list[#list + 1] = { unit, qty, mine, seller }
 			seen = seen + 1
 		end,
 		progress = function(done, total) setState("processing", done / total) end,
@@ -97,6 +105,8 @@ local function process(count)
 				end
 			end
 			realm.lastScan = now
+			-- Undercut compares your listings (marked) against everyone else's.
+			ns:Send("FullScanListings", grouped)
 			local elapsed = debugprofilestop and (debugprofilestop() - started) / 1000 or 0
 			setState("idle")
 			ns:Send("PricesChanged")

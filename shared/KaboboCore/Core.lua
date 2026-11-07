@@ -29,8 +29,28 @@ function ns:Print(...)
 	print(UI and UI.Prefix(ns.title) or (ns.title .. ":"), ...)
 end
 
--- Only with the hidden `debug` slash toggle on.
+-- Diagnostic log, saved with the addon's data as db.log (written to disk on /reload and logout,
+-- in WTF\Account\<account>\SavedVariables\<Addon>.lua), newest last, at most LOG_LINES.
+ns.LOG_LINES = 400
+
+function ns:Log(...)
+	local db = ns.db
+	if not db then return end
+	local parts = {}
+	for i = 1, select("#", ...) do parts[i] = tostring((select(i, ...))) end
+	local log = db.log
+	if type(log) ~= "table" then
+		log = {}
+		db.log = log
+	end
+	local stamp = date and date("%m-%d %H:%M:%S") or tostring(time())
+	log[#log + 1] = stamp .. " " .. table.concat(parts, " ")
+	while #log > ns.LOG_LINES do table.remove(log, 1) end
+end
+
+-- Always logged; printed only with the hidden `debug` slash toggle on.
 function ns:Debug(...)
+	ns:Log(...)
 	if not (ns.db and ns.db.settings and ns.db.settings.debug) then return end
 	local tag = "[" .. ns.title .. " debug]"
 	local UI = ns.KaboboUI
@@ -53,6 +73,7 @@ function ns:Guard(name, fn)
 		if ok then return ... end
 		local err = ...
 		errors = errors + 1
+		ns:Log("error in " .. name .. ": " .. tostring(err))
 		if errors >= ns.MAX_ERRORS then
 			ns.disabled[name] = true
 			ns:Print(name .. " hit repeated errors and is turned off until /reload.")

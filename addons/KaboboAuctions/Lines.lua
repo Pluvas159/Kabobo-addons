@@ -102,6 +102,10 @@ function Lines.Tooltip(item, s, now)
 		local recipe = C:RecipeFor(item.id)
 		if recipe then Lines.AddCraftCost(out, recipe, item.count, s.matsList, now) end
 	end
+	local rate = item.id and ns.Sales:RateOf(item.id)
+	if rate then
+		out[#out + 1] = { "Leaves the AH", ns.Sales.Text(rate) .. " a day" .. muted(" (estimate)") }
+	end
 	if s.tooltipLedger and item.name then
 		local avg, qty = ns.Ledger:AverageSale(item.name)
 		if avg then out[#out + 1] = { "You sold at", Money(avg) .. muted(" (" .. qty .. " sold)") } end
