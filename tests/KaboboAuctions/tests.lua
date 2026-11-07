@@ -1277,7 +1277,7 @@ test("sales: listings that left the auction house between two scans", function()
 	eq(Sales.Rate({ { now - 30 * 86400, 50, 24 } }, now), nil, "too old")
 	eq(Sales.Text(nil), nil); eq(Sales.Text(8), "~8"); eq(Sales.Text(0.5), "~0.5"); eq(Sales.Text(12.4), "~12")
 
-	-- recording: only tracked items, only scans 1-36 h apart
+	-- recording: only tracked items, only scans 15 min - 36 h apart
 	local sales, tracked = {}, { ["2996"] = true }
 	eq(Sales.Record(sales, { ["2996"] = { { 100, 5, nil, "A" }, { 100, 5, nil, "A" } }, ["1"] = { { 1, 1 } } }, tracked, now), 0)
 	eq(sales["1"], nil, "not tracked")
@@ -1290,6 +1290,25 @@ test("sales: listings that left the auction house between two scans", function()
 	eq(Sales.Record(sales, {}, tracked, now + 12 * 3600), 1)
 	eq(sales["2996"].g[2][2], 5)
 	eq(Sales.Record(sales, {}, tracked, now + 60 * 3600), 0, "two days apart: not compared")
+	eq(Sales.Record(sales, {}, tracked, now + 60 * 3600 + 1200), 1, "20 minutes is enough")
+end)
+
+test("sales: the crafts window says when to scan for Gone/day", function()
+	local Sales = ns.Sales
+	local sales = Sales:Table()
+	for k in pairs(sales) do sales[k] = nil end
+	local now = time()
+	ns.db.account.lastReplicate = 0
+	eq(Sales:Next(now), "first")
+	sales["2996"] = { st = now - 300, snap = {}, g = {} }
+	local what, wait = Sales:Next(now)
+	eq(what, "again"); eq(wait, 600)
+	sales["2996"].st = now - 3600
+	what, wait = Sales:Next(now)
+	eq(wait, 0)
+	sales["2996"].g = { { now, 2, 1 } }
+	eq(Sales:Next(now), nil, "has data")
+	sales["2996"] = nil
 end)
 
 test("crafts can be ranked by profit per day", function()

@@ -65,8 +65,9 @@ Data is kept per realm (ruleset) and faction in the `KaboboAuctionsDB` saved var
 - **Gone/day** is an estimate. The game does not tell addons what other players buy, so after
   each full scan the listings of every item you can craft are compared with the previous full
   scan: auctions that were there and are gone now are counted. That includes auctions that expired
-  or were cancelled, so it reads high. It needs two full scans 1 to 36 hours apart, and it averages
-  the last 14 days. **You sold** is exact: it comes from your auction mail.
+  or were cancelled, so it reads high. It needs two full scans 15 minutes to 36 hours apart (the
+  crafts window says when to scan), and it averages the last 14 days, so it gets more reliable with
+  every scan. **You sold** is exact: it comes from your auction mail.
 - Recipes with some mats unpriced (marked `*`) come after the fully priced ones, since their profit
   is too high; recipes whose item has no AH price yet come last. Hover a row for the item's full
   tooltip with the mats list.

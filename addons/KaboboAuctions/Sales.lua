@@ -4,8 +4,10 @@
 -- every item this account can craft are compared with the previous full scan: auctions (same
 -- price, size and seller) that were there before and are gone now left the auction house. That
 -- counts sales, but also auctions that expired or were cancelled, so it reads high; it is an
--- estimate ("~4/day"). Only scans 1 to 36 hours apart are compared: closer ones see too little,
--- further ones mostly see auctions expire.
+-- estimate ("~4/day"). Only scans 15 minutes (the server's full scan cooldown) to 36 hours apart
+-- are compared: further ones mostly see auctions expire. Short gaps are cleaner but noisier, so
+-- the rate is gone units over all compared hours of the last KEEP_DAYS days, and it settles as
+-- more scans come in.
 --
 -- Your own sales are exact: they come from the ledger (auction mail).
 --
@@ -17,7 +19,7 @@ local Sales = ns:NewModule("Sales")
 local P = ns.Pricing
 
 local DAY = 86400
-Sales.MIN_HOURS = 1
+Sales.MIN_HOURS = 0.25
 Sales.MAX_HOURS = 36
 Sales.KEEP_DAYS = 14
 
@@ -134,6 +136,21 @@ function Sales:YouSold(itemID, days)
 		if e.k == "s" and e.item == name and e.t >= since then qty = qty + e.qty end
 	end
 	return qty
+end
+
+-- What to do before Gone/day shows anything, or nil once it has data:
+-- "first" (no full scan seen yet), or "again" with the seconds to wait (0: scan now).
+function Sales:Next(now)
+	local sales = Sales:Table()
+	if not sales then return nil end
+	local newest
+	for _, e in pairs(sales) do
+		if e.g and #e.g > 0 then return nil end
+		if e.st and (not newest or e.st > newest) then newest = e.st end
+	end
+	if not newest then return "first" end
+	local wait = math.max(Sales.MIN_HOURS * 3600 - (now - newest), ns.Scanner:CooldownRemaining(), 0)
+	return "again", math.ceil(wait)
 end
 
 ns:On("FullScanListings", function(grouped)

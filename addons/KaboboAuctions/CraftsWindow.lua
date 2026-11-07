@@ -129,9 +129,16 @@ function CW:Refresh()
 		window.list:SetEmptyText("No recipes saved yet. Open each of your profession windows once.")
 		return
 	end
+	-- Until Gone/day has data, say how to get it instead of the unpriced count.
+	local next, wait = ns.Sales:Next(time())
+	local note = unpriced .. " without AH prices (listed last)"
+	if next == "first" then
+		note = "Gone/day: full scan now (/ka scan), then again 15 min later"
+	elseif next == "again" then
+		note = wait > 0 and ("Gone/day: full scan again in " .. PUI.Clock(wait)) or "Gone/day: full scan again now (/ka scan)"
+	end
 	window.infoLine:SetText(string.format("%d recipes   %s   %s", #rows,
-		PUI.Color(profitable .. " profitable", "good"),
-		PUI.Color(unpriced .. " without AH prices (listed last)", "muted")))
+		PUI.Color(profitable .. " profitable", "good"), PUI.Color(note, next and "gold" or "muted")))
 	window.list:SetEmptyText(#rows == 0 and "No recipes that make an item." or nil)
 end
 
@@ -155,3 +162,4 @@ end
 ns:On("PricesChanged", function() CW:Refresh() end)
 ns:On("VendorPricesChanged", function() CW:Refresh() end)
 ns:On("CraftsChanged", function() CW:Refresh() end)
+ns:On("ScanStateChanged", function() CW:Refresh() end)
