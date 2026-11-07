@@ -38,7 +38,13 @@ Restart WoW after installing a new addon. After that, `/reload` picks up code ch
 ```sh
 npm install     # once
 npm test        # syntax-check every addon as Lua 5.1 and run its tests outside the game
+npm run sync    # after editing shared/: copy the shared libraries into the addons
 ```
+
+All addons share one look through **PluvasUI**, a small UI library in
+[shared/PluvasUI](shared/PluvasUI) (style tokens, windows, lists, tabs, buttons, tooltips). Each
+addon embeds its own copy in `Libs/PluvasUI`, so every addon still installs on its own. Edit the
+library only in `shared/`, then run `npm run sync`.
 
 Create a new addon with:
 

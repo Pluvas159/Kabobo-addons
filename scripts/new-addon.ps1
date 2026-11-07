@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
-    Scaffolds a new addon: addons\<Name>\ with a TOC and Core.lua, plus tests\<Name>\tests.lua.
+    Scaffolds a new addon: addons\<Name>\ with a TOC, Core.lua and the shared PluvasUI library
+    (Libs\PluvasUI), plus tests\<Name>\tests.lua.
 
 .EXAMPLE
     .\scripts\new-addon.ps1 -Name PluvasBags -Title "Pluvas' Bags" -Notes "Bag sorting for WoW: Forever."
@@ -66,7 +67,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
 end)
 
 function ns:Print(...)
-	print("|cff22b8cf$Title|r:", ...)
+	print(ns.PluvasUI.Prefix("$Title"), ...)
 end
 
 local function applyDefaults(target, defaults)
@@ -101,6 +102,11 @@ test("saved variables are created", function()
 end)
 "@
 
+# Embed the shared UI library and load it first from the TOC.
+& node (Join-Path $repo 'scripts\sync-shared.js') --embed $Name
+if ($LASTEXITCODE -ne 0) { throw "Could not embed PluvasUI (is Node installed?)." }
+
 Write-Host "Created addons\$Name and tests\$Name."
 Write-Host "Next: npm test -- $Name, then .\scripts\install.ps1 (symlinks it into WoW; restart the game)."
 Write-Host "Add the addon to the tables in README.md and AGENTS.md."
+Write-Host "Build its UI with ns.PluvasUI: see shared\PluvasUI\README.md."

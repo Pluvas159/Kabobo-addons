@@ -4,7 +4,8 @@
   "description": "Pluvas' World of Warcraft: Forever addons (monorepo). Node is only used for out-of-game tests.",
   "scripts": {
     "test": "node tests/run.js",
-    "install-addons": "powershell -ExecutionPolicy Bypass -File scripts/install.ps1"
+    "install-addons": "powershell -ExecutionPolicy Bypass -File scripts/install.ps1",
+    "sync": "node scripts/sync-shared.js"
   },
   "devDependencies": {
     "fengari": "^0.1.4",

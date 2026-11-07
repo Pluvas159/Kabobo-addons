@@ -21,15 +21,96 @@ tinsert = table.insert
 UISpecialFrames = {}
 SlashCmdList = {}
 
--- Frames record registered events so tests can fire them.
+-- Frames ------------------------------------------------------------------------------
+--
+-- A generic stand-in for frames, font strings and textures, enough to run UI code outside the
+-- game:
+--   - RegisterEvent is recorded, so _FIRE(event, ...) reaches OnEvent scripts
+--   - Show/Hide/SetShown track visibility and fire OnShow/OnHide; frames start shown, as in game
+--   - HookScript chains after the current script
+--   - SetPoint/ClearAllPoints/GetPoint record anchors; SetSize/SetHeight/SetWidth record size
+--     (SetHeight fires OnSizeChanged)
+--   - SetText/GetText keep text
+--   - named frames become globals; other setters (Set*, Enable*, Register*, ...) do nothing
+-- Fields that do not exist (e.g. frame.TitleText) stay nil, like in game.
 _EVENT_FRAMES = {}
-function CreateFrame()
-	local f = { events = {}, scripts = {} }
-	function f:RegisterEvent(e) self.events[e] = true end
-	function f:SetScript(name, fn) self.scripts[name] = fn end
+
+local ACTION_VERBS = { "Set", "Enable", "Disable", "Register", "Lock", "Unlock", "Clear", "Start", "Stop" }
+
+local FrameMethods = {}
+function FrameMethods:RegisterEvent(e) self.events[e] = true end
+function FrameMethods:UnregisterEvent(e) self.events[e] = nil end
+function FrameMethods:SetScript(name, fn) self.scripts[name] = fn end
+function FrameMethods:GetScript(name) return self.scripts[name] end
+function FrameMethods:HookScript(name, fn)
+	local old = self.scripts[name]
+	self.scripts[name] = function(...)
+		if old then old(...) end
+		fn(...)
+	end
+end
+function FrameMethods:Show()
+	if self.shown then return end
+	self.shown = true
+	if self.scripts.OnShow then self.scripts.OnShow(self) end
+end
+function FrameMethods:Hide()
+	if not self.shown then return end
+	self.shown = false
+	if self.scripts.OnHide then self.scripts.OnHide(self) end
+end
+function FrameMethods:SetShown(v) if v then self:Show() else self:Hide() end end
+function FrameMethods:IsShown() return self.shown end
+function FrameMethods:IsVisible() return self.shown end
+function FrameMethods:SetSize(w, h) self.width, self.height = w, h end
+function FrameMethods:SetWidth(w) self.width = w end
+function FrameMethods:SetHeight(h)
+	local changed = self.height ~= h
+	self.height = h
+	if changed and self.scripts.OnSizeChanged then self.scripts.OnSizeChanged(self, self.width, h) end
+end
+function FrameMethods:GetWidth() return self.width or 0 end
+function FrameMethods:GetHeight() return self.height or 0 end
+function FrameMethods:SetPoint(...) self.points[#self.points + 1] = { ... } end
+function FrameMethods:ClearAllPoints() self.points = {} end
+function FrameMethods:GetPoint(i)
+	local p = self.points[i or 1]
+	if p then return unpack(p) end
+end
+function FrameMethods:GetNumPoints() return #self.points end
+function FrameMethods:SetText(t) self.text = t end
+function FrameMethods:GetText() return self.text end
+function FrameMethods:GetParent() return self.parent end
+function FrameMethods:GetName() return self.name end
+function FrameMethods:CreateFontString() return _NEW_FRAME(nil, self) end
+function FrameMethods:CreateTexture() return _NEW_FRAME(nil, self) end
+
+local frameMeta = { __index = function(_, k)
+	local m = FrameMethods[k]
+	if m then return m end
+	if type(k) == "string" then
+		for _, verb in ipairs(ACTION_VERBS) do
+			if k:sub(1, #verb) == verb then return function() end end
+		end
+	end
+	return nil
+end }
+
+function _NEW_FRAME(name, parent)
+	local f = setmetatable({ events = {}, scripts = {}, points = {}, shown = true, name = name, parent = parent }, frameMeta)
+	if name then _G[name] = f end
+	return f
+end
+
+function CreateFrame(_, name, parent)
+	local f = _NEW_FRAME(name, parent)
 	_EVENT_FRAMES[#_EVENT_FRAMES + 1] = f
 	return f
 end
+
+UIParent = _NEW_FRAME("UIParent")
+GameTooltip = _NEW_FRAME("GameTooltip")
+GameTooltip_Hide = function() GameTooltip:Hide() end
 
 function _FIRE(event, ...)
 	for _, f in ipairs(_EVENT_FRAMES) do

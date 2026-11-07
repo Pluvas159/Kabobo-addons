@@ -7,6 +7,7 @@
 ## IconTexture: Interface\Icons\INV_Misc_Coin_02
 ## SavedVariables: PluvasAuctionsDB
 
+Libs\PluvasUI\PluvasUI.xml
 Core.lua
 Util.lua
 Pricing.lua
