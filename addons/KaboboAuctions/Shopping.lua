@@ -15,7 +15,8 @@
 -- PlaceBid) are protected: only Blizzard's own auction house buttons may call them, even from a
 -- click on an addon button (ADDON_ACTION_BLOCKED). So the list never buys. It:
 --   - puts the next mat's name in the auction house search box (Find) and, with
---     settings.autoFill, runs the search and fills in the quantity once you click the item
+--     settings.autoFill, runs the search, opens the item from the results and fills in the
+--     quantity
 --   - for a craft step, selects the recipe (C_TradeSkillUI.OpenRecipe) and fills in the craft
 --     count (autoFill), or puts its name in the profession window's search box
 --   It only fills inputs: Buy Now and Create are always your clicks. Should the game ever block
@@ -428,6 +429,7 @@ end
 -- Puts the step's recipe in the profession window's search box. Like the auction house, only
 -- the text: picking the recipe and Create stay Blizzard's.
 local lastAuto = 0   -- time() autoFill last filled something in Blizzard's windows
+local openItem = nil -- itemID to open from the search results the autofill search brings
 SH.AUTO_WINDOW = 120 -- a block within this many seconds of that is blamed on it
 
 local function usedAuto(what)
@@ -480,8 +482,9 @@ function SH:Find(m)
 	local bar = AuctionHouseFrame.SearchBar
 	if autoFill() and bar and bar.StartSearch then
 		usedAuto("search " .. m.id)
+		openItem = m.id
 		ns.Try(bar.StartSearch, bar)
-		return set("idle", "Click " .. P.ItemName(m.id) .. " in the results: the quantity fills in. Check it and click Buy Now.")
+		return set("idle", "Searching " .. P.ItemName(m.id) .. ": it opens with the quantity filled in. Check it and click Buy Now.")
 	end
 	set("idle", "Press Enter, click " .. P.ItemName(m.id) .. " in the results, set the quantity to "
 		.. SH.Remaining(m) .. " and click Buy Now.")
@@ -499,6 +502,28 @@ local function fillQuantity(itemID, qty)
 	ns.Try(display.SetQuantitySelected, display, qty)
 	return true
 end
+
+-- The autofill search's results: open the current mat, as a click on it would.
+function SH.OnBrowseResults(results)
+	local id = openItem
+	if not (id and autoFill() and AuctionHouseFrame and AuctionHouseFrame.SelectBrowseResult) then return end
+	for _, r in ipairs(results or {}) do
+		if r.itemKey and r.itemKey.itemID == id then
+			openItem = nil
+			usedAuto("open " .. id)
+			ns.Try(AuctionHouseFrame.SelectBrowseResult, AuctionHouseFrame, r)
+			return true
+		end
+	end
+end
+
+ns:On("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", function()
+	if not openItem or not C_AuctionHouse then return end
+	-- After Blizzard has drawn the results.
+	C_Timer.After(0, ns:Guard("Shopping open", function()
+		SH.OnBrowseResults(C_AuctionHouse.GetBrowseResults and C_AuctionHouse.GetBrowseResults())
+	end))
+end)
 
 -- After the auction house opens an item in its commodity buy frame (hooked below): the current
 -- mat gets the quantity still to buy (the cap advice lowers it once the listings are read).
@@ -806,7 +831,7 @@ ns:On("AUCTION_HOUSE_SHOW", function()
 end)
 
 ns:On("AUCTION_HOUSE_CLOSED", function()
-	pending = nil
+	pending, openItem = nil, nil
 	if SH.list and SH.state ~= "done" and not (SH.current and SH.current.kind == "craft") then
 		SH.offer = nil
 		set("idle", "Open the auction house to keep buying.")

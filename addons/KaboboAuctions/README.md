@@ -87,8 +87,7 @@ Data is kept per realm (ruleset) and faction in the `KaboboAuctionsDB` saved var
   is still to buy, what the crafted items sell for after the AH cut, the profit, and how many
   sell per day.
 - The main button walks the steps. **Find** searches the next mat in the auction house (Browse
-  tab); click it in the results and the quantity to buy is filled in (lowered to what is under
-  your price cap). You buy with the auction house's own **Buy Now**: on this client only
+  tab), opens it and fills in the quantity to buy (lowered to what is under your price cap). You buy with the auction house's own **Buy Now**: on this client only
   Blizzard's buttons may buy, so no addon can. **Craft** selects the next recipe in the profession
   window and fills in how many to craft; you click **Create**. Each purchase and craft is counted,
   then the next step comes up. Click a row to pick that step, **Skip** to leave one for later.

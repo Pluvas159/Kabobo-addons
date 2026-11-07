@@ -1427,8 +1427,20 @@ test("shopping autofill: runs the search and fills quantities and counts, never 
 
 	truthy(SH:Start(5000, 1))
 	eq(SH.current.id, 2589)
+	local openedItem
+	AuctionHouseFrame.SelectBrowseResult = function(_, r) openedItem = r.itemKey.itemID end
+	C_AuctionHouse.GetBrowseResults = function()
+		return { { itemKey = { itemID = 2590 } }, { itemKey = { itemID = 2589 } } }
+	end
 	SH:Find()
 	eq(box:GetText(), ns.Pricing.ItemName(2589)); eq(searched, 1, "the search runs")
+	_FIRE("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+	_RUN_TIMERS()
+	eq(openedItem, 2589, "the item opens from the results")
+	openedItem = nil
+	_FIRE("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+	_RUN_TIMERS()
+	eq(openedItem, nil, "only once per Find")
 
 	-- clicking the item in the results fills the quantity still to buy
 	SH.OnBuyFrameItem(2589)
