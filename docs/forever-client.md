@@ -131,6 +131,24 @@ yet been checked in game.
   page is open does not hide the frame, so follow the frame's `OnShow`/`OnHide` rather than
   `TRADE_SKILL_SHOW`/`TRADE_SKILL_CLOSE`.
 
+## Disenchanting
+
+The client has no API for disenchant results, so Pluvas' Professions carries its own tables in
+`addons/PluvasProfessions/Disenchant.lua`. They are Classic's rules by item level, quality and
+weapon or armor (uncommon armor 75% dust, 20% essence, ~5% shard; weapons swap dust and essence;
+rares give a shard; epics give shards or Nexus Crystals). Rules, not item lists, so new Forever
+items are covered as long as they have a normal item level and quality.
+
+From a Forever guide (wow-professions.com/forever/disenchanting-guide, read November 2026; it does
+not say whether its data comes from beta or live). **Not checked in game:**
+- Same mats and chances as Classic. The guide keys its table by required level (1-10, 11-15, ...),
+  which lines up with Classic's item-level bands shifted by 5.
+- **No Enchanting skill requirement**: any Enchanter can disenchant any item.
+- Disenchant is not in the spellbook; it is cast from the profession window.
+
+Still to confirm: that `C_Item.GetItemInfo` returns Classic item levels for vanilla items, that
+real disenchants match the tables, and whether Forever adds mats of its own.
+
 ## Trainers
 
 Read from `Blizzard_TrainerUI/Mainline/Blizzard_TrainerUI.lua` on the `forever` branch (see

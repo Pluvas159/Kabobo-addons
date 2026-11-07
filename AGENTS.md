@@ -10,7 +10,7 @@ written by Pluvas. Each addon is self-contained and ships on its own.
 | Addon | Folder | What it does |
 | --- | --- | --- |
 | Pluvas' Auctions | `addons/PluvasAuctions` | AH price scanning and history in tooltips, plus a sales, profit and gold ledger |
-| Pluvas' Professions | `addons/PluvasProfessions` | Lists unlearned recipes and where to learn them, beside the profession window and from trainers |
+| Pluvas' Professions | `addons/PluvasProfessions` | Lists unlearned recipes and where to learn them, beside the profession window and from trainers; disenchant advice in tooltips (with Pluvas' Auctions) |
 
 Add new addons to this table.
 
@@ -106,7 +106,12 @@ Edits are live after `/reload` in game. Newly added addon folders need a game re
 
 - **Namespace**: start each file with `local ADDON, ns = ...` (or `local _, ns = ...`). Share code
   through `ns`. The only globals allowed are SavedVariables, `SLASH_*`/`SlashCmdList` entries, and
-  named frames, all prefixed with the addon name (`PluvasAuctionsDB`, `PluvasAuctionsFrame`).
+  named frames, all prefixed with the addon name (`PluvasAuctionsDB`, `PluvasAuctionsFrame`),
+  plus the `PluvasAddons` table that PluvasCore keeps for addons to share APIs.
+- **Addons working together**: an addon may use another Pluvas addon when both are loaded, but
+  must still work alone. The addon with the data publishes an API with `ns:Expose` (e.g.
+  `PluvasAuctions/Api.lua`); the other asks `ns:Peer(name)` each time the feature runs and turns
+  the feature off when it gets nil. Never read another addon's saved variables directly.
 - **Runtime**: every addon runs on **PluvasCore** (`shared/PluvasCore`, API in its
   [README](shared/PluvasCore/README.md)). An addon's `Core.lua` only declares its saved variables
   (`ns:Setup`) and slash commands (`ns:Slash`); everything else lives in modules. Never copy

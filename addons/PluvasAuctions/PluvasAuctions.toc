@@ -17,6 +17,7 @@ Ledger.lua
 Crafting.lua
 Lines.lua
 Tooltip.lua
+Api.lua
 CraftPanel.lua
 LedgerWindow.lua
 ScanButton.lua

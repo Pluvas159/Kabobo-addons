@@ -234,6 +234,36 @@ function P:Summary()
 	return count, realm and realm.lastScan or 0
 end
 
+-- Old prices ------------------------------------------------------------------
+--
+-- A price comes from the last time the item was seen on the AH. After settings.staleDays it is
+-- flagged as old everywhere it is shown (and in Pluvas' Professions, through the API).
+
+P.STALE_DAYS = 3   -- the default of settings.staleDays
+
+-- How long ago a price last seen at `seen` was, in seconds, once it counts as old; nil while it
+-- is fresh or when `seen` is unknown.
+function P.StaleAge(seen, now)
+	if type(seen) ~= "number" then return nil end
+	local days = ns.db and ns.db.settings and ns.db.settings.staleDays or P.STALE_DAYS
+	local age = now - seen
+	if age > days * DAY then return age end
+	return nil
+end
+
+-- /pa stale <days>
+function P:SetStaleDays(text)
+	local s = ns.db.settings
+	local days = tonumber(text)
+	if not days or days <= 0 then
+		ns:Print(string.format("prices count as old after %g days. Change it with /pa stale <days>.", s.staleDays))
+		return
+	end
+	s.staleDays = days
+	ns:Print(string.format("prices now count as old after %g days.", days))
+	ns:Send("SettingChanged", "staleDays", days)
+end
+
 function P:Reset()
 	ns.db.realms[ns.realmKey] = nil
 	ns:Print("price data for " .. ns.realmKey .. " deleted.")

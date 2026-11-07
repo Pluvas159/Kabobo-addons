@@ -12,10 +12,17 @@ local FALLBACK_BOTTOM = 44   -- clears the Track Recipe checkbox if we cannot me
 local panel
 
 -- Summary for a recipe in the open window, or nil when it makes no item or has no basic mats.
+-- With Pluvas' Professions loaded, it also says what the item would disenchant for.
 function CP.SummaryFor(recipeID)
 	local out, recipe = C:ReadSchematic(recipeID)
 	if not out then return nil end
-	return C.CraftSummary(recipe, C.MatPrice, C.RecipeOf, C.AHPrice(out))
+	local summary = C.CraftSummary(recipe, C.MatPrice, C.RecipeOf, C.AHPrice(out))   -- price, seen
+	-- Asked every time: Pluvas' Professions may load after this addon, or not at all.
+	local professions = ns:Peer("PluvasProfessions")
+	if professions and professions.DisenchantValue then
+		C.AddDisenchant(summary, professions.DisenchantValue(out, C.AHPrice))
+	end
+	return summary
 end
 
 -- Bottom left of the recipe details, lined up with the "Reagents:" column, growing upward, and
@@ -39,7 +46,7 @@ function CP:Update(recipeInfo)
 		panel:Hide()
 		return
 	end
-	panel:SetLines(Lines.Craft(summary, s.matsList))
+	panel:SetLines(Lines.Craft(summary, s.matsList, time()))
 	place()
 	panel:Show()
 end

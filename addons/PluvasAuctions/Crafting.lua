@@ -80,16 +80,17 @@ function C.UnitCost(itemID, priceOf, recipeOf, seen, depth)
 	return total / yield, missing, used
 end
 
--- { [itemID] = qty } scaled by `times` -> array of { id, qty, unit, cost, vendor }, most
+-- { [itemID] = qty } scaled by `times` -> array of { id, qty, unit, cost, vendor, seen }, most
 -- expensive first and unpriced mats last. unit/cost are nil for unpriced mats; vendor is true
--- when priceOf says the price is a vendor's (second result "vendor").
+-- when priceOf says the price is a vendor's (second result "vendor"); seen is when an AH price
+-- was last seen (third result).
 local function matList(used, times, priceOf)
 	local list = {}
 	for id, q in pairs(used) do
 		local qty = q * times
-		local unit, source = priceOf(id)
+		local unit, source, seen = priceOf(id)
 		list[#list + 1] = { id = id, qty = qty, unit = unit, cost = unit and math.floor(unit * qty + 0.5),
-			vendor = source == "vendor" or nil }
+			vendor = source == "vendor" or nil, seen = unit and seen or nil }
 	end
 	table.sort(list, function(a, b)
 		if (a.cost ~= nil) ~= (b.cost ~= nil) then return a.cost ~= nil end
@@ -139,6 +140,16 @@ function C.CostForItems(recipe, count, priceOf, recipeOf)
 	return math.floor(cost * scale + 0.5), missing, mats
 end
 
+-- When the oldest AH price behind a mats list was last seen, or nil (no AH prices).
+function C.OldestSeen(mats)
+	local oldest
+	for i = 1, #mats do
+		local seen = mats[i].seen
+		if seen and (not oldest or seen < oldest) then oldest = seen end
+	end
+	return oldest
+end
+
 -- Mats cost of one crafted item.
 function C.CostPerItem(recipe, priceOf, recipeOf)
 	local cost, missing = C.CostForItems(recipe, 1, priceOf, recipeOf)
@@ -151,19 +162,37 @@ function C.FormatQty(q)
 end
 
 -- Everything the profession window shows for one craft:
--- { cost, missing, yield, mats, value, net, profit }. value/net/profit are nil when the crafted
--- item has no AH price; profit is nil when the cost is unknown. The output is sold as one
--- auction, so one flat deposit.
-function C.CraftSummary(recipe, priceOf, recipeOf, outputPrice)
+-- { cost, missing, yield, mats, matsSeen, value, net, profit, seen }. value/net/profit are nil
+-- when the crafted item has no AH price; profit is nil when the cost is unknown. matsSeen and
+-- seen say when the oldest mat price and the item's own AH price (outputSeen) were last seen.
+-- The output is sold as one auction, so one flat deposit.
+function C.CraftSummary(recipe, priceOf, recipeOf, outputPrice, outputSeen)
 	local cost, missing, yield, mats = C.CostPerCraft(recipe, priceOf, recipeOf)
-	local r = { cost = cost, missing = missing, yield = yield, mats = mats }
+	local r = { cost = cost, missing = missing, yield = yield, mats = mats, matsSeen = C.OldestSeen(mats) }
 	if outputPrice then
+		r.seen = outputSeen
 		local made = math.floor(yield + 0.5)
 		if made < 1 then made = 1 end
 		local gross, _, net = P.NetProceeds(outputPrice, made, P.DEPOSIT)
 		r.value, r.net = gross, net
 		if cost then r.profit = net - cost end
 	end
+	return r
+end
+
+-- Adds disenchanting to a CraftSummary, from the expected AH value of disenchanting one crafted
+-- item (gross copper, before the cut) and how many of its results had no price. Sets de (what
+-- disenchanting everything one craft makes brings in after the AH cut; mats go up in stacks,
+-- so no deposit), deMissing, deProfit (nil when the mats cost is unknown) and deSeen (when the
+-- oldest price behind it was last seen). gross = nil (the item cannot be disenchanted) leaves
+-- the summary as it is.
+function C.AddDisenchant(r, gross, missing, seen)
+	if not gross then return r end
+	local made = math.floor(r.yield + 0.5)
+	if made < 1 then made = 1 end
+	local _, _, net = P.NetProceeds(gross * made, 1, 0)
+	r.de, r.deMissing, r.deSeen = net, missing or 0, seen
+	if r.cost then r.deProfit = net - r.cost end
 	return r
 end
 
@@ -196,18 +225,22 @@ function C.RecipeOf(itemID)
 	return C:RecipeFor(itemID)
 end
 
--- AH price per unit: market value, or the lowest buyout when there is no market value.
+-- AH price per unit: market value, or the lowest buyout when there is no market value. Also
+-- returns when the item was last seen.
 function C.AHPrice(itemID)
 	local entry = P:Get(tostring(itemID))
-	return entry and (entry.m or entry.n) or nil
+	if not entry then return nil end
+	return entry.m or entry.n, entry.t
 end
 
 -- Price per unit of a mat: the cheaper of its AH price and what a vendor charges for it. The
--- second result is "vendor" when the vendor price is used.
+-- second result is "vendor" when the vendor price is used; the third is when an AH price was
+-- last seen.
 function C.MatPrice(itemID)
-	local ah, vendor = C.AHPrice(itemID), ns.Vendor:Get(itemID)
+	local ah, seen = C.AHPrice(itemID)
+	local vendor = ns.Vendor:Get(itemID)
 	if vendor and (not ah or vendor <= ah) then return vendor, "vendor" end
-	return ah
+	return ah, nil, seen
 end
 
 -- Saved data --------------------------------------------------------------
@@ -268,7 +301,7 @@ end
 -- C_TradeSkillUI is only called while the trade skill session is open, for the character's own
 -- professions (not linked, guild or NPC crafting views).
 
-local trade = ns:Session("TRADE_SKILL_SHOW", "TRADE_SKILL_CLOSE")
+local trade = ns:TradeSkillSession()
 local scanning = false
 
 -- The recipe the profession window shows, for the profession window panel.
@@ -281,19 +314,14 @@ function C:ReadSchematic(recipeID)
 	return C.FromSchematic(ns.Try(TS.GetRecipeSchematic, recipeID, false))
 end
 
-local function viewingOwnProfession(TS, api)
-	return trade.open and not (api:Call(TS.IsTradeSkillLinked) or api:Call(TS.IsTradeSkillGuild)
-		or api:Call(TS.IsNPCCrafting))
-end
-
 function C:Scan()
 	local TS = C_TradeSkillUI
 	if scanning or not (TS and TS.GetAllRecipeIDs) then return end
 	local api = ns.NewCaller()
-	if not viewingOwnProfession(TS, api) then return end
-	local base = api:Call(TS.GetBaseProfessionInfo)
-	local professionID = base and base.professionID
-	if not professionID or professionID == 0 then return end
+	if not ns:ViewingOwnProfession(api) then return end
+	local name, base = ns:OpenProfession(api)
+	if not name then return end
+	local professionID = base.professionID
 	local ids = api:Call(TS.GetAllRecipeIDs)
 	if type(ids) ~= "table" or #ids == 0 then return end
 
@@ -317,7 +345,7 @@ function C:Scan()
 		done = function(ok)
 			scanning = false
 			if not ok then return end   -- keep what was saved; the next window update retries
-			C:Store(professionID, base.professionName, recipes, api.failures == 0)
+			C:Store(professionID, name, recipes, api.failures == 0)
 			if api.failures > 0 then ns:Debug("crafting: " .. api.failures .. " recipe reads failed") end
 			ns:Debug("crafting: stored", count, "recipes for profession", professionID)
 		end,

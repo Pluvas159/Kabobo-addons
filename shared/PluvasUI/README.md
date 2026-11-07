@@ -28,7 +28,7 @@ Addon code never hard-codes the look. Everything comes from `Style.lua`:
 
 | Token | Use |
 | --- | --- |
-| `PUI.Color(text, key)`, `PUI.RGB(key)` | `accent` (Pluvas blue), `gold` (headings), `text`, `soft`, `muted` (hints, no data), `good` (available, profit), `bad` (missing, loss) |
+| `PUI.Color(text, key)`, `PUI.RGB(key)` | `accent` (Pluvas blue), `gold` (headings), `text`, `soft`, `muted` (hints, no data), `good` (available, profit), `bad` (missing, loss), `warn` (out of date) |
 | `PUI.Fonts` | `title`, `heading`, `label`, `body`, `muted` |
 | `PUI.Sizes` | `pad` 14, `contentTop` 30, `gap` 4, `row` 18, `icon` 16, `button` 22, `tab` 20 |
 | `PUI.Templates` | the Blizzard templates behind windows and buttons |
@@ -39,8 +39,8 @@ Addon code never hard-codes the look. Everything comes from `Style.lua`:
 - **The Pluvas signature**: every window has a thin accent line under its title bar and a faded
   "Pluvas" wordmark in the bottom-right corner (`PUI.Signature`). Put footer text in
   `window:Footer()`, which stops short of the wordmark.
-- Group headers are gold; hints and "no data" are muted; good/bad are green/red. Don't add other
-  colors.
+- Group headers are gold; hints and "no data" are muted; good/bad are green/red; data
+  that may be out of date (old prices) is orange `warn`. Don't add other colors.
 - A selected button keeps its highlight lit (`PUI.SetSelected`) instead of being disabled: a
   gray button reads as "unavailable".
 - Docked panels sit to the right of the window they belong to, match its height, and close with

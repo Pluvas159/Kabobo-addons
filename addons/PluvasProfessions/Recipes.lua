@@ -19,7 +19,7 @@ local RESCAN_AFTER = 60
 
 R.current = nil            -- name of the profession open in the window
 
-local trade = ns:Session("TRADE_SKILL_SHOW", "TRADE_SKILL_CLOSE")
+local trade = ns:TradeSkillSession()
 local scanning = false
 local lastScan = {}        -- [professionName] = time() of the last finished read
 
@@ -64,24 +64,6 @@ end
 
 -- Reading the window ----------------------------------------------------------
 
-local function viewingOwnProfession(TS, api)
-	return TS and trade.open and not (api:Call(TS.IsTradeSkillLinked) or api:Call(TS.IsTradeSkillGuild)
-		or api:Call(TS.IsNPCCrafting))
-end
-
--- Name of the open profession, as GetProfessionInfo spells it, so every source of data uses the
--- same key. Returns name, base info.
-local function currentProfession(TS, api)
-	local base = api:Call(TS.GetBaseProfessionInfo)
-	if not base or not base.professionID or base.professionID == 0 then return nil end
-	for name, k in pairs(ns:KnownProfessions()) do
-		if name == base.professionName or (k.line and k.line == base.professionID) then
-			return name, base
-		end
-	end
-	return base.professionName, base
-end
-
 -- All recipe IDs of the open profession. The second value says whether the list includes
 -- unlearned recipes for sure: GetFilteredRecipeIDs follows Blizzard's filters, which hide them.
 local function recipeIDs(TS, api)
@@ -115,8 +97,8 @@ end
 function R:Scan(force)
 	local TS = C_TradeSkillUI
 	local api = ns.NewCaller()
-	if scanning or not viewingOwnProfession(TS, api) then return end
-	local name, base = currentProfession(TS, api)
+	if scanning or not ns:ViewingOwnProfession(api) then return end
+	local name, base = ns:OpenProfession(api)
 	if not name then return end
 	if R.current ~= name then
 		R.current = name
@@ -188,12 +170,12 @@ end
 -- place of source text. Only runs while the profession window is open.
 function R:Dump(count)
 	local TS, api = C_TradeSkillUI, ns.NewCaller()
-	if not viewingOwnProfession(TS, api) then
+	if not ns:ViewingOwnProfession(api) then
 		ns:Print("open one of your profession windows first.")
 		return
 	end
 	local ids, all = recipeIDs(TS, api)
-	ns:Print(string.format("%s: %d recipe IDs (all = %s)", tostring((currentProfession(TS, api))),
+	ns:Print(string.format("%s: %d recipe IDs (all = %s)", tostring((ns:OpenProfession(api))),
 		ids and #ids or 0, tostring(all)))
 	if TS.IsAnyRecipeFromSource then
 		local found = {}

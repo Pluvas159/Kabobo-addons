@@ -3,7 +3,8 @@
 --
 -- Edit this library only in shared/PluvasCore, then run `npm run sync`: every addon embeds its
 -- own copy under Libs/PluvasCore, and `npm test` fails when a copy drifts. A copy installs its
--- functions on its addon's namespace (`ns`) and creates no globals, so addons never clash.
+-- functions on its addon's namespace (`ns`) and creates no globals, so addons never clash. The
+-- one exception is the PluvasAddons table through which addons share APIs (Peers.lua).
 local ADDON, ns = ...
 
 ns.name = ADDON

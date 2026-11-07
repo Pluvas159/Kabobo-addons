@@ -313,3 +313,61 @@ test("a hidden debug toggle comes built in", function()
 	SlashCmdList.PLUVASCORETEST("debug")
 	eq(ns.db.settings.debug, false)
 end)
+
+-- Item tooltips -------------------------------------------------------------------
+
+test("tooltip item: link from the tooltip, else from the data", function()
+	local tooltip = { GetItem = function() return "Linen Cloth", "|Hitem:2589::::::::|h[Linen Cloth]|h" end }
+	local link, id = ns.TooltipItem(tooltip, nil)
+	eq(link, "|Hitem:2589::::::::|h[Linen Cloth]|h")
+	eq(id, 2589)
+	link, id = ns.TooltipItem({}, { id = 4306 })
+	eq(link, nil)
+	eq(id, 4306)
+	eq(ns.TooltipItem({}, {}), nil)
+end)
+
+test("item tooltip callbacks get the item, and only for item tooltips", function()
+	local got = {}
+	truthy(ns:OnItemTooltip("Probe tooltip", function(_, link, id) got[#got + 1] = tostring(link) .. "/" .. id end))
+	_HOVER({ AddDoubleLine = function() end }, { id = 2589 })
+	_HOVER({}, { id = 2589 })                                -- not a tooltip that takes lines
+	_HOVER({ AddDoubleLine = function() end }, {})           -- no item
+	eq(#got, 1)
+	eq(got[1], "nil/2589")
+end)
+
+-- Peers ---------------------------------------------------------------------------
+
+test("an exposed API is found by name; a missing addon gives nil", function()
+	local api = { Hello = function() return "hi" end }
+	ns:Expose(api)
+	eq(ns:Peer("PluvasCoreTest"), api)
+	eq(PluvasAddons.PluvasCoreTest, api)
+	eq(ns:Peer("PluvasNothing"), nil)
+end)
+
+-- Profession window ---------------------------------------------------------------
+
+test("own profession window and its name, only while it is open", function()
+	local linked = false
+	C_TradeSkillUI = {
+		IsTradeSkillLinked = function() return linked end,
+		GetBaseProfessionInfo = function() return { professionID = 197, professionName = "Schneiderei" } end,
+	}
+	GetProfessions = function() return 1 end
+	GetProfessionInfo = function() return "Tailoring", 0, 75, 150, 0, 0, 197 end
+	ns:TradeSkillSession()
+	eq(ns:ViewingOwnProfession(), false, "closed")
+	eq(ns:OpenProfession(), nil, "closed")
+	_FIRE("TRADE_SKILL_SHOW")
+	eq(ns:ViewingOwnProfession(), true)
+	local name, base = ns:OpenProfession()
+	eq(name, "Tailoring", "named by skill line, as the spellbook spells it")
+	eq(base.professionID, 197)
+	linked = true
+	eq(ns:ViewingOwnProfession(), false, "someone else's linked profession")
+	_FIRE("TRADE_SKILL_CLOSE")
+	eq(ns:TradeSkillSession(), ns:TradeSkillSession(), "one session per addon")
+	C_TradeSkillUI, GetProfessions, GetProfessionInfo = nil, nil, nil
+end)

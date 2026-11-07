@@ -25,10 +25,18 @@ Auction house price tracking and auction profit tracking for **World of Warcraft
   characters. Mats priced from a vendor are marked "vendor" in the mats list, and item tooltips
   show a "Buy from vendor" line.
 - **Profession window**: the selected recipe shows its mats cost, what the item sells for on the
-  AH, what is left after the AH cut and deposit, the profit, and the list of base mats.
+  AH, what is left after the AH cut and deposit, the profit, and the list of base mats. With
+  Pluvas' Professions installed, items that can be disenchanted also show what disenchanting them
+  brings in and the profit that way.
+- **Old prices are flagged**: a price shows when it was last seen ("3h ago"). Once that is more
+  than 3 days ago, it is marked in orange, e.g. "(5d old)", in tooltips, mats lists and the
+  profession window, so you know to scan again. Change the limit with `/pa stale <days>`.
 - **Bugs stay contained**: if part of the addon keeps erroring, it turns itself off until `/reload`
   instead of throwing an error on every hover.
 - Random-suffix items ("of the Bear") are priced separately.
+- **Works with Pluvas' Professions**: with both installed, Pluvas' Professions uses these prices to
+  tell you in tooltips whether an item is worth disenchanting, and the profession window shows
+  what a crafted item would disenchant for.
 
 **Sales and profit tracking**
 - Reads auction invoice mail ("Auction successful" and "Auction won") whenever your mailbox is open.
@@ -53,6 +61,7 @@ Data is kept per realm (ruleset) and faction in the `PluvasAuctionsDB` saved var
 | `/pa craft` | Mats cost in tooltips of items you can craft (on/off) |
 | `/pa mats` | The list of base mats under the mats cost (on/off) |
 | `/pa panel` | Mats cost and profit in the profession window (on/off) |
+| `/pa stale <days>` | Prices not seen for longer are flagged as old (default 3; no number prints the setting) |
 | `/pa resetprices` | Delete price data for this realm/faction |
 | `/pa resetledger` | Delete the sales history for this realm/faction |
 | `/pa help` | List the commands and the state of each setting |
@@ -73,6 +82,7 @@ sends an addon message (`PricesChanged`, `VendorPricesChanged`, `ScanStateChange
 | `Crafting.lua` | Reads your recipes from the profession window, works out mats cost |
 | `Lines.lua` | The label/value lines shown in tooltips and the profession window |
 | `Tooltip.lua` | Tooltip hook and `/pa price` |
+| `Api.lua` | Prices other Pluvas addons may read (`ns:Peer("PluvasAuctions")`) |
 | `CraftPanel.lua` | Mats cost and profit panel in the profession window |
 | `LedgerWindow.lua` | The ledger window |
 | `ScanButton.lua` | The full scan button on the auction house frame |
@@ -84,6 +94,9 @@ sends an addon message (`PricesChanged`, `VendorPricesChanged`, `ScanStateChange
 
 ## Changelog
 
+- **Unreleased**: shares its prices with other Pluvas addons (used by Pluvas' Professions for
+  disenchanting); with Pluvas' Professions, the profession window shows disenchant value and
+  profit. Prices not seen for more than 3 days are flagged as old (`/pa stale <days>`).
 - **0.1.0**: first public release. Full and passive AH scans with price history; tooltips with
   market value, lowest price, 14-day average, stack value and what is left after the AH cut and
   deposit; mats cost for items you can craft, priced at the cheaper of AH and vendor and broken

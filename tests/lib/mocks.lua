@@ -149,6 +149,20 @@ function _RUN_TIMERS(untilTime)
 	end
 end
 
+-- Item tooltips: TooltipDataProcessor post-calls are kept in _TOOLTIP_CALLS. _HOVER(tooltip,
+-- data) runs every item post-call, as the game does after building an item tooltip.
+Enum = Enum or {}
+Enum.TooltipDataType = { Item = 0 }
+_TOOLTIP_CALLS = {}
+TooltipDataProcessor = {
+	AddTooltipPostCall = function(kind, fn) _TOOLTIP_CALLS[#_TOOLTIP_CALLS + 1] = { kind = kind, fn = fn } end,
+}
+function _HOVER(tooltip, data)
+	for _, c in ipairs(_TOOLTIP_CALLS) do
+		if c.kind == Enum.TooltipDataType.Item then c.fn(tooltip, data) end
+	end
+end
+
 GetNormalizedRealmName = function() return "Forever" end
 UnitFactionGroup = function() return "Horde" end
 UnitName = function() return "Pluvas" end

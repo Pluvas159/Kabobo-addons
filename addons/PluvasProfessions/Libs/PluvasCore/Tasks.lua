@@ -17,6 +17,47 @@ function ns:Session(openEvent, closeEvent)
 	return session
 end
 
+-- The profession window -----------------------------------------------------------
+--
+-- Every addon that reads the profession window shares these, so they all agree on when it is
+-- safe to call C_TradeSkillUI and on what the open profession is called.
+
+local tradeSession
+
+-- The trade skill window's session, one per addon. Call it at load, before the module's own
+-- TRADE_SKILL_SHOW handlers (see ns:Session).
+function ns:TradeSkillSession()
+	if not tradeSession then tradeSession = ns:Session("TRADE_SKILL_SHOW", "TRADE_SKILL_CLOSE") end
+	return tradeSession
+end
+
+-- Whether the open trade skill window shows one of this character's own professions, not a
+-- linked, guild or NPC crafting view. api is an ns.NewCaller() (optional).
+function ns:ViewingOwnProfession(api)
+	local TS = C_TradeSkillUI
+	if not (TS and ns:TradeSkillSession().open) then return false end
+	api = api or ns.NewCaller()
+	return not (api:Call(TS.IsTradeSkillLinked) or api:Call(TS.IsTradeSkillGuild)
+		or api:Call(TS.IsNPCCrafting))
+end
+
+-- The profession open in the window, named as GetProfessionInfo spells it (so data read from
+-- the spellbook, trainers and the window share one key), and C_TradeSkillUI's base profession
+-- info. nil when no profession is open.
+function ns:OpenProfession(api)
+	local TS = C_TradeSkillUI
+	if not (TS and ns:TradeSkillSession().open) then return nil end
+	api = api or ns.NewCaller()
+	local base = api:Call(TS.GetBaseProfessionInfo)
+	if type(base) ~= "table" or not base.professionID or base.professionID == 0 then return nil end
+	for name, k in pairs(ns:KnownProfessions()) do
+		if name == base.professionName or (k.line and k.line == base.professionID) then
+			return name, base
+		end
+	end
+	return base.professionName, base
+end
+
 -- Merchants -----------------------------------------------------------------------
 --
 -- Every item the open vendor window sells: array of { link, id, name, price, quantity,

@@ -4,4 +4,6 @@
 	<Script file="Util.lua"/>
 	<Script file="Tasks.lua"/>
 	<Script file="Slash.lua"/>
+	<Script file="Tooltips.lua"/>
+	<Script file="Peers.lua"/>
 </Ui>

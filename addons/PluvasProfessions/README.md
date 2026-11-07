@@ -31,6 +31,32 @@ you want it.
   includes recipes that may not be in the game yet, so those start folded under **No source info**.
   Visiting a trainer moves the recipes it teaches out of that pile.
 
+## Disenchanting
+
+With **Pluvas' Auctions** installed too, the tooltip of every item you can disenchant (green, blue
+and purple weapons and armor) says whether it is **worth disenchanting**:
+
+- **worth it** (green) when the mats it should give are worth more than selling the item, or
+  **not worth it** (red) when selling it on the AH or to a vendor brings in more.
+- **expected mats**: what disenchanting is worth on average, from each possible result's chance,
+  amount and AH price. **selling instead**: the better of the AH and the vendor. Both are after
+  the 5% AH cut, and the AH sale also pays its deposit.
+- The possible results, likeliest first, with what each would be worth (`/pprof demats` hides
+  them), and a reminder when this character has no Enchanting. On Forever any Enchanting skill
+  can disenchant any item.
+- Mats without an AH price yet are left out. When that leaves it open, the tooltip says so: scan
+  the AH with Pluvas' Auctions.
+- Prices that Pluvas' Auctions counts as old (not seen for 3 days, `/pa stale <days>`) are
+  marked in orange with their age, and the verdict says "(old prices)": it may no longer hold.
+
+Pluvas' Auctions also shows in its profession window panel what a crafted item would disenchant
+for, and the profit if you disenchant it instead of selling.
+
+Without Pluvas' Auctions there are no prices, so these lines stay off. The results follow
+Classic's disenchanting rules (by item level, quality and weapon or armor), which Forever guides
+list unchanged. They are rules rather than a list of items, so gear new in Forever is covered too.
+They have not been checked against real disenchants yet.
+
 ## Commands
 
 | Command | What it does |
@@ -39,6 +65,8 @@ you want it.
 | `/pprof auto` | Open the list together with the profession window (on/off) |
 | `/pprof trainer` | Make profession trainers list recipes you cannot learn yet (on/off, default on) |
 | `/pprof unknown` | Hide recipes the game gives no source for (on/off) |
+| `/pprof de` | "Worth disenchanting?" in item tooltips (on/off, default on, needs Pluvas' Auctions) |
+| `/pprof demats` | List the possible disenchant results in those tooltips (on/off) |
 | `/pprof reset` | Forget this character's recipe data |
 | `/pprof help` | List the commands and the state of each setting |
 | `/pprof dump` | With a profession window open: print what the game returns for a few unlearned recipes (for troubleshooting) |
@@ -63,6 +91,9 @@ you want it.
 | `Recipes.lua` | Reads the open profession window |
 | `Trainer.lua` | Reads what profession trainers teach |
 | `Vendor.lua` | Learns which vendors sell recipes |
+| `Disenchant.lua` | What disenchanting gives and whether it beats selling (pure, unit tested) |
+| `DisenchantTooltip.lua` | The disenchant lines in item tooltips, priced by Pluvas' Auctions |
+| `Api.lua` | What other Pluvas addons may read (`ns:Peer("PluvasProfessions")`): disenchant value |
 | `Panel.lua` | The unlearned-recipes panel and its button under the profession window |
 
 The readers send `RecipesChanged` after each change, and the panel redraws. The runtime comes from
@@ -70,4 +101,6 @@ The readers send `RecipesChanged` after each change, and the panel redraws. The 
 
 ## Changelog
 
+- **Unreleased**: tooltips say whether an item is worth disenchanting (needs Pluvas' Auctions),
+  and flag verdicts that rest on old AH prices.
 - **0.1.0**: first public release.

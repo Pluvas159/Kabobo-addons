@@ -636,3 +636,169 @@ test("a crafting scan spread over frames stops when the window closes", function
 	eq(reads, 40, "only the batch already running finishes")
 	C_TradeSkillUI = nil
 end)
+
+-- API for other Pluvas addons
+
+test("API: prices by itemID or link, and proceeds after cut and deposit", function()
+	local api = ns:Peer("PluvasAuctions")
+	truthy(api, "Pluvas' Auctions exposes an API")
+	local items = ns.db.realms[ns.realmKey].items
+	items["7777"] = { m = 1000, n = 900, t = 123 }
+	items["7778"] = { n = 500, t = 124 }
+	local price, seen = api.Price(7777)
+	eq(price, 1000); eq(seen, 123)
+	eq((api.Price("|cff1eff00|Hitem:7777::::::::|h[Thing]|h|r")), 1000)
+	eq((api.Price(7778)), 500, "lowest buyout without a market value")
+	eq(api.Price(7779), nil)
+	eq(api.Proceeds(10000), 10000 - 500 - 100)
+	eq(api.Proceeds(10000, 0), 10000 - 500)
+	items["7777"], items["7778"] = nil, nil
+end)
+
+test("item tooltips get price lines through the shared hook", function()
+	local items = ns.db.realms[ns.realmKey].items
+	items["7777"] = { m = 1000, n = 900, t = time() }
+	local lines = {}
+	local tooltip = { AddDoubleLine = function(_, l, r) lines[l] = r end }
+	_HOVER(tooltip, { id = 7777 })
+	eq(lines["AH market"] ~= nil, true)
+	lines = {}
+	ns.db.settings.tooltip = false
+	_HOVER(tooltip, { id = 7777 })
+	eq(lines["AH market"], nil)
+	ns.db.settings.tooltip = true
+	items["7777"] = nil
+end)
+
+-- Disenchant value from Pluvas' Professions
+
+test("craft summary adds disenchant value and profit", function()
+	local r = CR.AddDisenchant({ yield = 1, cost = 1000 }, 2000, 0)
+	eq(r.de, 2000 - 100)   -- 5% cut, no deposit
+	eq(r.deMissing, 0)
+	eq(r.deProfit, 900)
+	r = CR.AddDisenchant({ yield = 2 }, 1000, 1)
+	eq(r.de, 2000 - 100, "everything one craft makes")
+	eq(r.deProfit, nil, "unknown mats cost")
+	r = CR.AddDisenchant({ yield = 1, cost = 5 }, nil)
+	eq(r.de, nil, "cannot be disenchanted")
+end)
+
+test("profession panel shows disenchant lines only with Pluvas' Professions", function()
+	local function labels(summary)
+		local out = {}
+		for _, line in ipairs(ns.Lines.Craft(summary, false)) do out[line[1]] = line[2] end
+		return out
+	end
+	local base = { cost = 1000, missing = 0, yield = 1, mats = {} }
+	eq(labels(base)["Disenchants for"], nil)
+	local l = labels({ cost = 1000, missing = 0, yield = 1, mats = {}, de = 1900, deMissing = 1, deProfit = 900 })
+	eq(l["Disenchants for"], PUI.MoneyIcons(1900) .. "|cff808080 (1 mats unpriced)|r")
+	eq(l["Profit if disenchanted"], PUI.SignedMoney(900, true))
+	l = labels({ cost = 1000, missing = 0, yield = 1, mats = {}, de = 0, deMissing = 3 })
+	eq(l["Disenchants for"], PUI.Color("no AH prices for its mats yet", "muted"))
+
+	-- SummaryFor asks the peer, with AH prices
+	local oldRead = CR.ReadSchematic
+	CR.ReadSchematic = function() return 5001, "1:1|2589*2" end
+	local asked
+	PluvasAddons.PluvasProfessions = { DisenchantValue = function(item, price)
+		asked = item
+		return 2000, 0
+	end }
+	local s = ns.CraftPanel.SummaryFor(42)
+	eq(asked, 5001)
+	eq(s.de, 1900)
+	PluvasAddons.PluvasProfessions = nil
+	s = ns.CraftPanel.SummaryFor(42)
+	eq(s.de, nil, "no peer, no disenchant lines")
+	CR.ReadSchematic = oldRead
+end)
+
+-- Old prices
+
+local Lines = ns.Lines
+
+test("prices not seen for longer than staleDays are old", function()
+	local P, DAY = ns.Pricing, 86400
+	local now = 1000 * DAY
+	eq(ns.db.settings.staleDays, 3, "default")
+	eq(P.StaleAge(now - 2 * DAY, now), nil)
+	eq(P.StaleAge(now - 5 * DAY, now), 5 * DAY)
+	eq(P.StaleAge(nil, now), nil, "unknown")
+	SlashCmdList.PLUVASAUCTIONS("stale 7")
+	eq(ns.db.settings.staleDays, 7)
+	eq(P.StaleAge(now - 5 * DAY, now), nil)
+	SlashCmdList.PLUVASAUCTIONS("stale nonsense")
+	eq(ns.db.settings.staleDays, 7, "a bad value changes nothing")
+	truthy(_PRINTED[#_PRINTED]:find("after 7 days", 1, true), "prints the current setting")
+	SlashCmdList.PLUVASAUCTIONS("stale 3")
+	eq(ns.Lines.OldNote(now - 5 * DAY, now), PUI.Color(" (5d old)", "warn"))
+	eq(ns.Lines.OldNote(now - DAY, now), "")
+end)
+
+test("tooltips flag old AH prices and old mat prices", function()
+	local DAY = 86400
+	local now = time()
+	local items = ns.db.realms[ns.realmKey].items
+	items["7777"] = { m = 1000, n = 900, t = now - 5 * DAY }
+	local lines = Lines.Tooltip({ key = "7777", id = 7777, count = 1 }, { tooltipHistory = false }, now)
+	eq(lines[1][2], PUI.MoneyIcons(1000) .. PUI.Color(" (5d old)", "warn"))
+	items["7777"].t = now - 3600
+	lines = Lines.Tooltip({ key = "7777", id = 7777, count = 1 }, { tooltipHistory = false }, now)
+	eq(lines[1][2], PUI.MoneyIcons(1000) .. PUI.Color(" (1h ago)", "muted"))
+
+	-- mats: the AH price carries when it was seen, vendor prices never get old
+	items["2589"] = { m = 100, t = now - 6 * DAY }
+	items["2320"] = { m = 50, t = now }
+	ns.db.vendor[4340] = 350
+	local price, source, seen = CR.MatPrice(2589)
+	eq(price, 100); eq(source, nil); eq(seen, now - 6 * DAY)
+	local cost, missing, _, mats = CR.CostPerCraft("1:1|2589*2,2320*1,4340*1", CR.MatPrice)
+	eq(CR.OldestSeen(mats), now - 6 * DAY)
+	eq(Lines.CostText(cost, missing, CR.OldestSeen(mats), now), PUI.MoneyIcons(600) .. PUI.Color(" (6d old)", "warn"))
+	local out = Lines.AddMats({}, mats, nil, now)
+	eq(out[1][2], PUI.MoneyIcons(350) .. PUI.Color(" vendor", "muted"))
+	eq(out[2][2], PUI.MoneyIcons(200) .. PUI.Color(" (6d old)", "warn"))
+	eq(out[3][2], PUI.MoneyIcons(50))
+	items["7777"], items["2589"], items["2320"] = nil, nil, nil
+	ns.db.vendor = {}
+end)
+
+test("profession panel flags old prices, including disenchanting", function()
+	local DAY = 86400
+	local now = time()
+	local items = ns.db.realms[ns.realmKey].items
+	items["2589"] = { m = 100, t = now - 4 * DAY }
+	items["5001"] = { m = 3000, t = now - 10 * DAY }
+	local oldRead = CR.ReadSchematic
+	CR.ReadSchematic = function() return 5001, "1:1|2589*2" end
+	local gotPrice
+	PluvasAddons.PluvasProfessions = { DisenchantValue = function(item, price)
+		local _, seen = price(2589)
+		gotPrice = seen
+		return 2000, 0, seen
+	end }
+	local s = ns.CraftPanel.SummaryFor(42)
+	eq(s.matsSeen, now - 4 * DAY)
+	eq(s.seen, now - 10 * DAY, "the crafted item's own AH price")
+	eq(gotPrice, now - 4 * DAY, "Pluvas' Professions gets when each price was seen")
+	eq(s.deSeen, now - 4 * DAY)
+
+	local l = {}
+	for _, line in ipairs(Lines.Craft(s, false, now)) do l[line[1]] = line[2] end
+	eq(l["Mats cost"], PUI.MoneyIcons(200) .. PUI.Color(" (4d old)", "warn"))
+	eq(l["Sells for (AH)"], PUI.MoneyIcons(3000) .. PUI.Color(" (10d old)", "warn"))
+	eq(l["Disenchants for"], PUI.MoneyIcons(1900) .. PUI.Color(" (4d old)", "warn"))
+
+	PluvasAddons.PluvasProfessions = nil
+	CR.ReadSchematic = oldRead
+	items["2589"], items["5001"] = nil, nil
+end)
+
+test("API: how old a price is", function()
+	local api = ns:Peer("PluvasAuctions")
+	eq(api.StaleAge(1000, 1000 + 86400), nil)
+	eq(api.StaleAge(1000, 1000 + 4 * 86400), 4 * 86400)
+	eq(api.StaleAge(nil), nil)
+end)

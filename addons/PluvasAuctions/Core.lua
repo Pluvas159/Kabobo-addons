@@ -24,6 +24,7 @@ ns:Setup({
 			professionPanel = true, -- mats cost and profit in the profession window
 			matsList = true,        -- base mats listed under the mats cost
 			historyDays = 60,       -- days of daily price history kept
+			staleDays = 3,          -- prices not seen for longer are flagged as old
 		},
 		account = {
 			lastReplicate = 0,      -- time() of the last full scan (one per account per 15 min)
@@ -47,6 +48,8 @@ ns:Slash({ "/pa", "/pluvas" }, {
 	{ cmd = "craft", toggle = "tooltipCraft", help = "mats cost in tooltips of items you can craft" },
 	{ cmd = "mats", toggle = "matsList", help = "base mats listed under the mats cost" },
 	{ cmd = "panel", toggle = "professionPanel", help = "mats cost and profit in the profession window" },
+	{ cmd = "stale", args = "<days>", help = "flag prices not seen for this many days as old",
+		run = function(rest) ns.Pricing:SetStaleDays(rest) end },
 	{ cmd = "resetprices", help = "delete price data for this realm/faction", run = function() ns.Pricing:Reset() end },
 	{ cmd = "resetledger", help = "delete sales history for this realm/faction", run = function() ns.Ledger:Reset() end },
 })

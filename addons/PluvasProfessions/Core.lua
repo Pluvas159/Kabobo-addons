@@ -21,6 +21,9 @@ ns:Setup({
 			-- default below does not come back on the next load. Forever gives no source text for
 			-- most recipes, so that pile starts collapsed.
 			collapsed = { unknown = true },
+			-- Disenchanting in item tooltips. Needs Pluvas' Auctions for prices.
+			disenchant = true,         -- "worth disenchanting?" in tooltips of disenchantable items
+			disenchantMats = true,     -- list what disenchanting may give under it
 		},
 		trainer = {},  -- trainer catalog, shared by every character (see Data.lua)
 		vendor = {},   -- vendor catalog, shared by every character (see Data.lua)
@@ -33,6 +36,12 @@ ns:Slash({ "/pprof", "/pluvasprof" }, {
 	{ cmd = "auto", toggle = "panel", help = "open that list with the profession window" },
 	{ cmd = "trainer", toggle = "trainerUnavailable", help = "trainers list recipes you cannot learn yet" },
 	{ cmd = "unknown", toggle = "hideUnknown", help = "hide recipes with no known source" },
+	{ cmd = "de", toggle = "disenchant", help = function()
+		local help = "\"worth disenchanting?\" in item tooltips"
+		if not ns.DisenchantTooltip.Available() then help = help .. " (needs Pluvas' Auctions for prices)" end
+		return help
+	end },
+	{ cmd = "demats", toggle = "disenchantMats", help = "list what disenchanting may give in those tooltips" },
 	{ cmd = "reset", help = "forget this character's recipe data", run = function() ns.Data:ResetChar() end },
 	{ cmd = "dump", args = "[count]", help = "with a profession window open, print what the game returns for unlearned recipes",
 		run = function(rest) ns.Recipes:Dump(tonumber(rest:match("^(%d+)")) or 3) end },

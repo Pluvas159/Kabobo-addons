@@ -20,6 +20,7 @@ UI.Colors = {
 	muted = "808080",  -- hints, disabled, "no data"
 	good = "40d040",   -- available, profit
 	bad = "ff5050",    -- missing requirement, loss
+	warn = "ffa030",   -- data that may be out of date (old AH prices)
 }
 
 -- Font objects by role.
