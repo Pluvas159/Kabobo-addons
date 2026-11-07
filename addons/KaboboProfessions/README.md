@@ -101,6 +101,7 @@ The readers send `RecipesChanged` after each change, and the panel redraws. The 
 
 ## Changelog
 
-- **Unreleased**: tooltips say whether an item is worth disenchanting (needs Kabobo's Auctions),
+- **0.2.0**: renamed from Pluvas' Professions: the slash command is now `/kprof`, saved data under
+  the old name is not carried over. Tooltips say whether an item is worth disenchanting (needs Kabobo's Auctions),
   and flag verdicts that rest on old AH prices.
 - **0.1.0**: first public release.

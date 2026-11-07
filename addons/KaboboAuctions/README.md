@@ -180,7 +180,8 @@ sends an addon message (`PricesChanged`, `VendorPricesChanged`, `ScanStateChange
 
 ## Changelog
 
-- **Unreleased**: shares its prices with other Kabobo addons (used by Kabobo's Professions for
+- **0.2.0**: renamed from Pluvas' Auctions: slash commands are now `/ka` and `/kabobo`, saved data
+  under the old name is not carried over. Shares its prices with other Kabobo addons (used by Kabobo's Professions for
   disenchanting); with Kabobo's Professions, the profession window shows disenchant value and
   profit. Prices not seen for more than 3 days are flagged as old (`/ka stale <days>`).
   Crafts window (`/ka crafts`) ranking this character's learned recipes per

@@ -2,7 +2,7 @@
 ## Title: Kabobo's Professions
 ## Notes: Shows the profession recipes you have not learned yet, and where to learn them (trainer, vendor, drop, quest), and whether items are worth disenchanting, for World of Warcraft: Forever.
 ## Author: Kabobo
-## Version: 0.1.0
+## Version: 0.2.0
 ## Category: Kabobo's addons
 ## IconTexture: Interface\Icons\INV_Misc_Note_01
 ## SavedVariables: KaboboProfessionsDB
