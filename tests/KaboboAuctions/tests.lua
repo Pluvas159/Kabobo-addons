@@ -848,9 +848,17 @@ test("shopping finds mats for the auction house's Buy Now and counts what you bu
 	truthy(SH.message:find("Not enough money", 1, true), "money message")
 	GetMoney = nil
 
-	-- the auction house refusing
+	-- the error Forever sends right after a purchase that went through is not a refusal
+	local before = SH.message
+	_FIRE("COMMODITY_PURCHASE_SUCCEEDED")
+	_FIRE("AUCTION_HOUSE_SHOW_ERROR", 10)
+	eq(SH.message, before)
+
+	-- the auction house refusing (not right after a purchase)
+	SH.AFTER_PURCHASE = -1
 	Enum.AuctionHouseError = { NotEnoughMoney = 4 }
 	_FIRE("AUCTION_HOUSE_SHOW_ERROR", 4)
+	SH.AFTER_PURCHASE = 2
 	eq(SH.message, "The auction house refused: Not enough money. Nothing was bought.")
 	Enum.AuctionHouseError = nil
 
@@ -1273,7 +1281,7 @@ test("sales: expected expiries come off what disappeared, at any gap", function(
 
 	-- { unit, qty, yours, seller, band }
 	local before = Sales.Snapshot({ { 100, 5, nil, "A", 4 }, { 100, 5, nil, "A", 4 }, { 120, 1, nil, "B", 1 } })
-	eq(before["100|5|A"][4], 2)
+	eq(before["100"][4], 10, "units per price")
 	local after = Sales.Snapshot({ { 100, 5, nil, "A", 4 }, { 90, 3, nil, "C", 3 } })
 	-- 15 minutes: the very long stack cannot have expired (sold: 5); the short one half may have
 	near(Sales.Sold(before, after, 0.25), 5.5)
@@ -1285,7 +1293,9 @@ test("sales: expected expiries come off what disappeared, at any gap", function(
 	-- a snapshot from the older version (plain counts) is taken as 0-48 h left
 	near(Sales.Sold({ ["100|5|A"] = 2 }, after, 24), 2.5)
 	-- no time left from the client: band 5
-	eq(Sales.Snapshot({ { 100, 5, nil, "A" } })["100|5|A"][5], 1)
+	eq(Sales.Snapshot({ { 100, 5, nil, "A" } })["100"][5], 5)
+	-- a commodity group that sold part of its units: only those count, not the whole group
+	near(Sales.Sold(Sales.Snapshot({ { 50, 200, nil, "", 4 } }), Sales.Snapshot({ { 50, 180, nil, "", 4 } }), 0.25), 20)
 
 	-- rate over the observations of the last KEEP_DAYS days
 	local now = 1000000
@@ -1338,6 +1348,8 @@ test("sales: the crafts window says when to scan for Sold/day", function()
 	what, wait = Sales:Next(now)
 	eq(wait, 0)
 	sales["2996"].g = { { now, 2, 1 } }
+	eq((Sales:Next(now)), "again", "an older method's observation does not count")
+	sales["2996"].g = { { now, 2, 1, Sales.METHOD } }
 	eq(Sales:Next(now), nil, "has data")
 	sales["2996"] = nil
 end)
@@ -1373,6 +1385,11 @@ end)
 
 test("recipe list label: profit, unpriced mark and sales", function()
 	local RP = ns.RecipeProfit
+	-- a long name is shortened to end before the label; a short one is left alone
+	eq(RP.NameWidth(0, 260, 20, 230, 90), 260 - 20 - 90 - RP.GAP - 4)
+	eq(RP.NameWidth(0, 260, 20, 100, 90), nil)
+	eq(RP.NameWidth(0, 260, 20, 230, 230), RP.MIN_NAME)
+	eq(RP.NameWidth(nil, 260, 20, 230, 90), nil)
 	eq(RP.Text(nil), nil)
 	eq(RP.Text({ cost = 100 }), nil, "no AH price for the item")
 	local text = RP.Text({ profit = 500, missing = 0 })

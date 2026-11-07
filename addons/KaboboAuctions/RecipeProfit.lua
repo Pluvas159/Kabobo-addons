@@ -10,6 +10,8 @@ local C = ns.Crafting
 local PUI = ns.KaboboUI
 
 RP.RIGHT_OFFSET = -4
+RP.GAP = 6          -- between the recipe name and the label
+RP.MIN_NAME = 60    -- the name keeps at least this much room
 
 local labels = setmetatable({}, { __mode = "k" })   -- [row frame] = font string
 local schematics = {}                               -- [recipeID] = { out, recipe } or false
@@ -55,6 +57,15 @@ local function textFor(row)
 	return RP.Text(C.CraftSummary(r.recipe, C.MatPrice, C.RecipeOf, C.AHPrice(r.out)), ns.Sales:RateOf(r.out))
 end
 
+-- How wide the recipe name may be so it ends before our label: the row's width, minus where the
+-- name starts, the label and a gap. nil when it fits anyway or cannot be measured.
+function RP.NameWidth(rowLeft, rowWidth, nameLeft, nameWidth, labelWidth)
+	if not (rowLeft and rowWidth and nameLeft and nameWidth and labelWidth) or labelWidth <= 0 then return nil end
+	local room = rowWidth - (nameLeft - rowLeft) - labelWidth - RP.GAP - math.abs(RP.RIGHT_OFFSET)
+	if nameWidth <= room then return nil end
+	return math.max(RP.MIN_NAME, room)
+end
+
 local function decorate(row)
 	local text = textFor(row)
 	local fs = labels[row]
@@ -65,6 +76,14 @@ local function decorate(row)
 		labels[row] = fs
 	end
 	fs:SetText(text or "")
+	-- Shorten the recipe name (it ends in "...") rather than draw over it. Blizzard sets the name's
+	-- width again whenever it fills the row, so this is redone on every refresh.
+	local name = row.Label
+	if text and name and name.SetWidth and name.GetLeft and row.GetLeft then
+		local width = RP.NameWidth(row:GetLeft(), row:GetWidth(), name:GetLeft(),
+			name.GetStringWidth and name:GetStringWidth() or name:GetWidth(), fs:GetStringWidth())
+		if width then name:SetWidth(width) end
+	end
 end
 
 function RP:Refresh()

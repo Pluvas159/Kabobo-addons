@@ -2,8 +2,8 @@
 --
 -- The game does not tell addons what other players buy. So after each full scan, the listings of
 -- every item this account can craft are compared with the previous full scan, however long ago it
--- was (15 minutes to 48 hours): auctions (same price, size and seller) that were there before and
--- are gone now either sold (or were cancelled) or expired. Each auction's time-left band tells
+-- was (15 minutes to 48 hours): units listed at a price before and not any more either sold (or
+-- were cancelled) or expired. Each auction's time-left band tells
 -- them apart: one that had more time left than the gap cannot have expired, and for one that
 -- could have, the chance it did is the part of its band below the gap (time left taken as even
 -- across the band). The expected expiries are taken off what disappeared; the rest sold.
@@ -15,10 +15,10 @@
 -- Your own sales are exact: they come from the ledger (auction mail).
 --
 -- Saved layout: db.realms[realmKey].sales[itemKey] = {
---   snap = { ["unit|qty|seller"] = { auctions per band 1..5 } } from the last full scan (a plain
---   count from older versions = band 5), st = time() of it,
---   g = { { time, units sold, hours between the scans, 2 }, ... } (the last KEEP_DAYS days; the
---   2 marks this method, older observations are dropped) }
+--   snap = { [unit price] = { units per band 1..5 } } from the last full scan (older versions
+--   saved { ["unit|qty|seller"] = auctions }, still read), st = time() of it,
+--   g = { { time, units sold, hours between the scans, METHOD }, ... } (the last KEEP_DAYS days;
+--   observations of an older METHOD are dropped) }
 local _, ns = ...
 local Sales = ns:NewModule("Sales")
 local P = ns.Pricing
@@ -28,7 +28,7 @@ Sales.MIN_HOURS = 0.25   -- the server's full scan cooldown
 Sales.MAX_HOURS = 48     -- the longest auction: past it, everything could have expired
 Sales.KEEP_DAYS = 14
 Sales.SOLID_HOURS = 6    -- below this many hours compared, the estimate is shown as thin
-Sales.METHOD = 2
+Sales.METHOD = 3   -- observations from older methods are dropped (2 overcounted commodities)
 
 -- Time-left bands (Enum.AuctionHouseTimeLeftBand + 1) as hours left { from, to }. Band 5 is
 -- "unknown": anything up to the longest auction.
@@ -38,18 +38,19 @@ Sales.UNKNOWN = 5
 -- Pure logic ----------------------------------------------------------------------
 
 -- Full scan rows of one item ({ unit, qty, own, seller, band }) ->
--- { ["unit|qty|seller"] = { auctions in band 1, ..., band 5 } }.
+-- { [unit price] = { units in band 1, ..., band 5 } }. Units per price, not auctions: the server
+-- groups commodity listings, so a group that sold part of its units comes back smaller, not gone.
 function Sales.Snapshot(listings)
 	local snap = {}
 	for _, l in ipairs(listings or {}) do
-		local sig = math.floor(l[1] + 0.5) .. "|" .. math.floor(l[2]) .. "|" .. tostring(l[4] or "")
-		local bands = snap[sig]
+		local price = tostring(math.floor(l[1] + 0.5))
+		local bands = snap[price]
 		if not bands then
 			bands = { 0, 0, 0, 0, 0 }
-			snap[sig] = bands
+			snap[price] = bands
 		end
 		local b = Sales.BANDS[l[5] or 0] and l[5] or Sales.UNKNOWN
-		bands[b] = bands[b] + 1
+		bands[b] = bands[b] + math.max(0, math.floor(l[2] or 1))
 	end
 	return snap
 end
@@ -69,31 +70,56 @@ local function bandsOf(v)
 	return { 0, 0, 0, 0, 0 }
 end
 
+-- A snapshot in the current layout. Older versions keyed auctions by "unit|qty|seller" and
+-- counted auctions: those become units per price.
+local function byPrice(snap)
+	local out, old = {}, false
+	for key in pairs(snap or {}) do
+		if tostring(key):find("|", 1, true) then old = true; break end
+	end
+	if not old then return snap or {} end
+	for key, v in pairs(snap) do
+		local price, qty = tostring(key):match("^([^|]*)|(%d+)|")
+		qty = tonumber(qty) or 1
+		local bands = out[price]
+		if not bands then
+			bands = { 0, 0, 0, 0, 0 }
+			out[price] = bands
+		end
+		local from = bandsOf(v)
+		for b = 1, 5 do bands[b] = bands[b] + (from[b] or 0) * qty end
+	end
+	return out
+end
+
 local function total(bands)
 	local n = 0
 	for i = 1, #bands do n = n + bands[i] end
 	return n
 end
 
--- Units estimated sold between two snapshots `gap` hours apart: of each group of identical
--- auctions, how many are gone, minus how many of those were expected to expire. The auctions
--- most likely to expire are taken to be the ones gone, so the estimate errs low.
+-- Units estimated sold between two snapshots `gap` hours apart: at each price, how many units
+-- fewer are listed, minus how many of those were expected to expire. The units most likely to
+-- expire are taken to be the ones gone, so the estimate errs low.
 function Sales.Sold(old, new, gap)
+	old, new = byPrice(old), byPrice(new)
 	local sold = 0
-	for sig, v in pairs(old or {}) do
+	for price, v in pairs(old) do
 		local bands = bandsOf(v)
-		local gone = total(bands) - total(bandsOf(new and new[sig]))
+		local gone = total(bands) - total(bandsOf(new[price]))
 		if gone > 0 then
-			local chances = {}
-			for b = 1, #bands do
-				local p = Sales.ExpiryChance(b, gap)
-				for _ = 1, bands[b] do chances[#chances + 1] = p end
+			-- Bands from most to least likely to have expired.
+			local order = {}
+			for b = 1, #bands do order[#order + 1] = b end
+			table.sort(order, function(a, c) return Sales.ExpiryChance(a, gap) > Sales.ExpiryChance(c, gap) end)
+			local left, expired = gone, 0
+			for _, b in ipairs(order) do
+				local take = math.min(left, bands[b])
+				expired = expired + take * Sales.ExpiryChance(b, gap)
+				left = left - take
+				if left == 0 then break end
 			end
-			table.sort(chances, function(a, c) return a > c end)
-			local expired = 0
-			for i = 1, gone do expired = expired + (chances[i] or 1) end
-			local qty = tonumber(sig:match("^[^|]*|(%d+)|")) or 1
-			sold = sold + (gone - expired) * qty
+			sold = sold + gone - expired
 		end
 	end
 	return sold
@@ -176,11 +202,20 @@ end
 
 -- Estimated units sold per day, or nil before two scans were compared; and whether the estimate
 -- is solid (SOLID_HOURS of scans compared).
+-- Observations of the current METHOD only (older ones are dropped at the next scan).
+local function current(obs)
+	local out = {}
+	for _, o in ipairs(obs or {}) do
+		if o[4] == Sales.METHOD then out[#out + 1] = o end
+	end
+	return out
+end
+
 function Sales:RateOf(itemID)
 	local sales = Sales:Table()
 	local e = sales and sales[tostring(itemID)]
 	if not e then return nil, false end
-	local rate, hours = Sales.Rate(e.g, time())
+	local rate, hours = Sales.Rate(current(e.g), time())
 	return rate, hours >= Sales.SOLID_HOURS
 end
 
@@ -209,7 +244,7 @@ function Sales:Next(now)
 	if not sales then return nil end
 	local newest
 	for _, e in pairs(sales) do
-		if e.g and #e.g > 0 then return nil end
+		if #current(e.g) > 0 then return nil end
 		if e.st and (not newest or e.st > newest) then newest = e.st end
 	end
 	if not newest then return "first" end
