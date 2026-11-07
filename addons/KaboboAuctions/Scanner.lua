@@ -51,14 +51,17 @@ function S.IsMe(owner, ownerFullName)
 	return owner == me or ownerFullName == me or ownerFullName == (me .. "-" .. tostring(ns.realm))
 end
 
--- Turns one replicate row into (itemKey, unit price, quantity, yours, seller), or nil for rows
--- without a buyout or item data. Replicate buyouts are for the whole stack.
+-- Turns one replicate row into (itemKey, unit price, quantity, yours, seller, time-left band 1-4
+-- or nil), or nil for rows without a buyout or item data. Replicate buyouts are for the whole
+-- stack.
 local function readRow(index)
 	local _, _, qty, _, _, _, _, _, _, buyout, _, _, _, owner, ownerFullName, _, itemID = C_AuctionHouse.GetReplicateItemInfo(index)
 	if not (itemID and qty and qty > 0 and buyout and buyout > 0) then return nil end
 	local link = C_AuctionHouse.GetReplicateItemLink(index)
+	local band = C_AuctionHouse.GetReplicateItemTimeLeft and ns.Try(C_AuctionHouse.GetReplicateItemTimeLeft, index)
+	band = type(band) == "number" and band + 1 or nil
 	return (link and P.ItemKeyFromLink(link)) or P.ItemKey(itemID), buyout / qty, qty, S.IsMe(owner, ownerFullName) or nil,
-		ownerFullName or owner or ""
+		ownerFullName or owner or "", band
 end
 
 -- Reads every row over several frames, then records one entry per item.
@@ -66,7 +69,7 @@ local function process(count)
 	cancelTimers()
 	setState("processing", 0)
 	local started = debugprofilestop and debugprofilestop() or 0
-	local grouped = {}   -- itemKey -> { { unit, qty, yours, seller }, ... }
+	local grouped = {}   -- itemKey -> { { unit, qty, yours, seller, band }, ... }
 	local seen, skipped = 0, 0
 
 	ns:Spread({
@@ -75,7 +78,7 @@ local function process(count)
 		size = S.CHUNK,
 		alive = function() return ah.open end,
 		step = function(i)
-			local key, unit, qty, mine, seller = readRow(i - 1)   -- replicate rows start at 0
+			local key, unit, qty, mine, seller, band = readRow(i - 1)   -- replicate rows start at 0
 			if not key then
 				skipped = skipped + 1
 				return
@@ -85,7 +88,7 @@ local function process(count)
 				list = {}
 				grouped[key] = list
 			end
-			list[#list + 1] = { unit, qty, mine, seller }
+			list[#list + 1] = { unit, qty, mine, seller, band }
 			seen = seen + 1
 		end,
 		progress = function(done, total) setState("processing", done / total) end,

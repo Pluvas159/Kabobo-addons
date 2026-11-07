@@ -1,5 +1,7 @@
 -- Kabobo's Auctions: undercut status beside each of your auctions in the auction house's
--- Auctions tab ("Undercut 10c", "Undercut, same price", "Same price, before you", "Lowest").
+-- Auctions tab: "Undercut 10c", "Undercut (same price)" (someone listed at your price after you),
+-- "Tied, you're first" (others at your price listed before you), or "Lowest". It sits in the
+-- Bid column, which is empty for buyout-only auctions, so it never covers the item name.
 --
 -- The list is AuctionHouseFrame.AuctionsFrame.AllAuctionsList (Blizzard_AuctionHouseUI, shared
 -- by Forever and Mainline): a ScrollBox with a table builder, columns Name (fills), Bid 120,
@@ -11,7 +13,8 @@ local AL = ns:NewModule("AuctionLabels")
 local U = ns.Undercut
 local PUI = ns.KaboboUI
 
-AL.RIGHT_OFFSET = -335   -- Bid 120 + Buyout 120 + Time left 50 + padding, from the row's right
+AL.RIGHT_OFFSET = -176   -- the Bid column's right edge: Buyout 120 + Time left 50 + padding
+AL.WIDTH = 116           -- the Bid column is 120 wide
 
 local labels = setmetatable({}, { __mode = "k" })   -- row frame -> font string
 local list
@@ -24,10 +27,8 @@ function AL.Text(rowData)
 	local all = U:Mine()
 	local e = all and all[U.KeyOf(rowData.itemKey, rowData.itemLink)]
 	if not (e and e.s) then return nil end
-	if U.SamePrice(e) then return PUI.Color("Undercut, same price", "bad") end
-	if e.s == "undercut" then return PUI.Color("Undercut ", "bad") .. PUI.Money(e.o) end
-	if e.s == "matched" then return PUI.Color("Same price, before you", "gold") end
-	return PUI.Color("Lowest", "good")
+	local text, color = U.StatusText(e)
+	return PUI.Color(text, color) .. (e.s == "undercut" and not U.SamePrice(e) and (" " .. PUI.Money(e.o)) or "")
 end
 
 local function decorate(row)
@@ -37,6 +38,7 @@ local function decorate(row)
 		if not text then return end
 		fs = PUI.Text(row, "body", "RIGHT")
 		fs:SetPoint("RIGHT", row, "RIGHT", AL.RIGHT_OFFSET, 0)
+		fs:SetWidth(AL.WIDTH)
 		labels[row] = fs
 	end
 	fs:SetText(text or "")

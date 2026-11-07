@@ -183,9 +183,9 @@ function SW:Refresh()
 	if t.net then
 		local profit = PUI.SignedMoney(t.profit)
 		if t.missing > 0 then profit = profit .. PUI.Color(" (too high: some mats unpriced)", "muted") end
-		local sold = ns.Sales.Text(ns.Sales:RateOf(list.output))
+		local sold = ns.Sales.Text((ns.Sales:RateOf(list.output)))
 		local yours = ns.Sales:YouSold(list.output, 30)
-		local demand = (sold and ("  " .. sold .. "/day leave the AH") or "")
+		local demand = (sold and ("  sells " .. sold .. "/day") or "")
 			.. (yours > 0 and ("  you sold " .. yours .. " in 30d") or "")
 		window.profitLine:SetText("Sells for " .. PUI.Money(t.net) .. " after the AH cut.  Profit: " .. profit
 			.. (demand ~= "" and PUI.Color(" ·" .. demand, "muted") or ""))

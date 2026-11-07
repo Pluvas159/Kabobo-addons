@@ -58,16 +58,19 @@ Data is kept per realm (ruleset) and faction in the `KaboboAuctionsDB` saved var
 - **Crafts window** (`/ka crafts`, the "Crafts by profit" button in the ledger, or "Profit
   ranking" under the profession window): every recipe this character has learned, one tab per
   profession. Columns: mats cost, what the items sell for after the 5% AH cut and the deposit, the
-  profit, **Gone/day**, **You sold** (30 days) and how many are listed on the AH.
-- **Sort** button: by profit per craft, or by **profit per day** (profit x Gone/day), so a big
-  profit on something nobody buys drops down. Recipes without a Gone/day yet come after those with
+  profit, **Sold/day**, **You sold** (30 days) and how many are listed on the AH.
+- **Sort** button: by profit per craft, or by **profit per day** (profit x Sold/day), so a big
+  profit on something nobody buys drops down. Recipes without a Sold/day yet come after those with
   one.
-- **Gone/day** is an estimate. The game does not tell addons what other players buy, so after
+- **Sold/day** is an estimate. The game does not tell addons what other players buy, so after
   each full scan the listings of every item you can craft are compared with the previous full
-  scan: auctions that were there and are gone now are counted. That includes auctions that expired
-  or were cancelled, so it reads high. It needs two full scans 15 minutes to 36 hours apart (the
-  crafts window says when to scan), and it averages the last 14 days, so it gets more reliable with
-  every scan. **You sold** is exact: it comes from your auction mail.
+  scan, whenever that was (15 minutes to 48 hours before). Of the auctions that disappeared, those
+  that had more time left than the gap sold; for the rest, the expected number of expiries (from
+  each auction's time left) is taken off. Every scan adds to the estimate, whatever its gap: it is
+  units sold over all hours compared in the last 14 days. It shows gray until 6 hours of scans
+  are compared. Limits: auctions listed and sold between two scans are never seen, so scanning
+  more often makes it truer, and a cancelled auction looks like a sale. The crafts window says
+  when to scan. **You sold** is exact: it comes from your auction mail.
 - Recipes with some mats unpriced (marked `*`) come after the fully priced ones, since their profit
   is too high; recipes whose item has no AH price yet come last. Hover a row for the item's full
   tooltip with the mats list.
@@ -82,7 +85,7 @@ Data is kept per realm (ruleset) and faction in the `KaboboAuctionsDB` saved var
 - Each row shows what it is worth, crafted mats included, and the totals show what all the mats
   are worth **including what you already have** (so the profit matches the crafts window), what
   is still to buy, what the crafted items sell for after the AH cut, the profit, and how many
-  leave the AH per day.
+  sell per day.
 - The main button walks the steps. **Find** puts the next mat's name in the auction house search
   box: press Enter, click the item, and the list says how many to buy and what that costs. You buy
   with the auction house's own **Buy Now**: on this client only Blizzard's buttons may buy, so no
@@ -109,8 +112,9 @@ Data is kept per realm (ruleset) and faction in the `KaboboAuctionsDB` saved var
   listed, so the addon remembers how many units others had at your price when it first compared
   it; more units later means someone listed after you. Auctions the addon first sees long after
   you posted them count everything already at your price as listed before you.
-- The Auctions tab shows the status beside each of your auctions: **Undercut** with the cheaper
-  price, **Undercut, same price**, **Same price, before you**, or **Lowest**.
+- The Auctions tab shows the status in the Bid column of each of your auctions: **Undercut** with
+  the cheaper price, **Undercut (same price)** (someone listed at your price after you), **Tied,
+  you're first** (others at your price listed before you, so yours sells first), or **Lowest**.
 - The ledger's **My auctions** list shows all of them, undercut first.
 
 ## Commands
@@ -177,7 +181,8 @@ sends an addon message (`PricesChanged`, `VendorPricesChanged`, `ScanStateChange
   profit. Prices not seen for more than 3 days are flagged as old (`/ka stale <days>`).
   Crafts window (`/ka crafts`) ranking this character's learned recipes per
   profession by profit or profit per day, with mats cost, net sale value, an estimate of how many
-  leave the AH per day, your own sales and quantity listed. Profit beside each recipe in the
+  sell per day (from full scans at any interval, expiries taken out), your own sales and quantity
+  listed. Profit beside each recipe in the
   profession window. Shopping list per recipe with what to buy and what to craft, cost and profit
   totals, that finds each mat in the AH and each recipe in the profession window, and advises how
   many to buy under a price cap (`/ka buycap`). Undercut alerts for your auctions, checked

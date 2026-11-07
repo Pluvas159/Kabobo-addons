@@ -10,7 +10,7 @@
 --   LedgerChanged          a sale, purchase or gold balance was recorded, or the ledger reset
 --   CraftsChanged          a profession's recipes were stored, or a dropped profession removed
 --   ShoppingChanged        the shopping list, its current step, or the price advice changed
---   FullScanListings(g)    a full scan finished: { [itemKey] = { { unit, qty, yours, seller }, ... } }
+--   FullScanListings(g)    a full scan finished: { [itemKey] = { { unit, qty, yours, seller, band }, ... } }
 --   UndercutsChanged       your auctions were read, or one was compared against other listings
 --   SettingChanged(key)    a slash toggle flipped a setting
 local _, ns = ...

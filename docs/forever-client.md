@@ -100,9 +100,12 @@ Forever uses the **modern auction house** (`C_AuctionHouse`), with item and comm
   in `/ka log`), and `C_AuctionHouse.GetAuctionInfoByID` for item buyouts.
 - **Undercut labels** in the Auctions tab work (confirmed in game 2026-11-07); they show the result
   of the last scan or search of each item.
-- **Sellers in full scans**: the "Gone/day" estimate keys auctions by unit price, stack size and
-  `ownerFullName`/`owner` from `GetReplicateItemInfo`. Not confirmed: whether commodity rows carry a
-  seller; without one, same-price stacks of the same size are matched by count, which still works.
+- **Sellers and time left in full scans**: the "Sold/day" estimate keys auctions by unit price,
+  stack size and `ownerFullName`/`owner` from `GetReplicateItemInfo`, and reads
+  `GetReplicateItemTimeLeft(i)` as `Enum.AuctionHouseTimeLeftBand` (Short < 30 min, Medium
+  30 min-2 h, Long 2-12 h, Very long 12-48 h, as on Mainline). Not confirmed in game: whether
+  commodity rows carry a seller (without one, identical stacks are matched by count), and the band
+  boundaries. Without a time left, every auction is taken as 0-48 h.
 
 ## Professions
 

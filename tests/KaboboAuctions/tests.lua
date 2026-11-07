@@ -917,7 +917,7 @@ test("undercut: same price counts only when listed after you", function()
 	eq(mine["2673"].s, "matched", "4 units were there when you were first compared")
 	eq(mine["2673"].b, 4)
 	eq(#_PRINTED, _PRINTED_COUNT, "no alert")
-	eq(ns.AuctionLabels.Text({ itemKey = { itemID = 2673 }, status = 0 }), PUI.Color("Same price, before you", "gold"))
+	eq(ns.AuctionLabels.Text({ itemKey = { itemID = 2673 }, status = 0 }), PUI.Color("Tied, you're first", "gold"))
 
 	-- someone lists 3 more at your price
 	search[1] = { 200, 7 }
@@ -925,7 +925,7 @@ test("undercut: same price counts only when listed after you", function()
 	eq(mine["2673"].s, "undercut")
 	truthy(U.SamePrice(mine["2673"]))
 	truthy(#_PRINTED > _PRINTED_COUNT, "alert")
-	eq(ns.AuctionLabels.Text({ itemKey = { itemID = 2673 }, status = 0 }), PUI.Color("Undercut, same price", "bad"))
+	eq(ns.AuctionLabels.Text({ itemKey = { itemID = 2673 }, status = 0 }), PUI.Color("Undercut (same price)", "bad"))
 
 	-- a full scan that cannot tell your rows apart keeps that
 	U.FromScan({ ["2673"] = { { 200, 9 }, { 300, 1 } } }, time())
@@ -1027,7 +1027,7 @@ test("undercut: owned auctions are read, and a full scan reports what changed", 
 
 	-- the Auctions tab label
 	local AL = ns.AuctionLabels
-	eq(AL.Text({ itemKey = { itemID = 2589 }, status = 0 }), PUI.Color("Undercut ", "bad") .. PUI.Money(95))
+	eq(AL.Text({ itemKey = { itemID = 2589 }, status = 0 }), PUI.Color("Undercut", "bad") .. " " .. PUI.Money(95))
 	eq(AL.Text({ itemKey = { itemID = 4306 }, status = 0 }), PUI.Color("Lowest", "good"))
 	eq(AL.Text({ itemKey = { itemID = 2589 }, status = 1 }), nil, "sold")
 
@@ -1261,39 +1261,70 @@ test("API: how old a price is", function()
 	eq(api.StaleAge(nil), nil)
 end)
 
-test("sales: listings that left the auction house between two scans", function()
+test("sales: expected expiries come off what disappeared, at any gap", function()
 	local Sales = ns.Sales
-	-- { unit, qty, yours, seller }
-	local before = Sales.Snapshot({ { 100, 5, nil, "A" }, { 100, 5, nil, "A" }, { 120, 1, nil, "B" } })
-	eq(before["100|5|A"], 2)
-	local after = Sales.Snapshot({ { 100, 5, nil, "A" }, { 90, 3, nil, "C" } })
-	eq(Sales.Gone(before, after), 6, "one stack of 5 and the single one went")
-	eq(Sales.Gone(after, after), 0)
+	-- the chance an auction expired: bands 1 Short < 30 min, 2 Medium, 3 Long 2-12 h, 4 Very long
+	-- 12-48 h, 5 unknown 0-48 h
+	eq(Sales.ExpiryChance(4, 0.25), 0); eq(Sales.ExpiryChance(3, 0.25), 0)
+	near(Sales.ExpiryChance(1, 0.25), 0.5); eq(Sales.ExpiryChance(1, 1), 1)
+	near(Sales.ExpiryChance(2, 1), 1 / 3)
+	near(Sales.ExpiryChance(4, 24), 1 / 3); eq(Sales.ExpiryChance(4, 60), 1)
+	near(Sales.ExpiryChance(5, 24), 0.5)
+
+	-- { unit, qty, yours, seller, band }
+	local before = Sales.Snapshot({ { 100, 5, nil, "A", 4 }, { 100, 5, nil, "A", 4 }, { 120, 1, nil, "B", 1 } })
+	eq(before["100|5|A"][4], 2)
+	local after = Sales.Snapshot({ { 100, 5, nil, "A", 4 }, { 90, 3, nil, "C", 3 } })
+	-- 15 minutes: the very long stack cannot have expired (sold: 5); the short one half may have
+	near(Sales.Sold(before, after, 0.25), 5.5)
+	-- a day: a third of very long auctions run out by then, and the short one surely did
+	near(Sales.Sold(before, after, 24), 5 * 2 / 3)
+	-- never below zero, and nothing gone means nothing sold
+	eq(Sales.Sold(after, after, 24), 0)
+	eq(Sales.Sold(before, {}, 60), 0, "everything could have expired")
+	-- a snapshot from the older version (plain counts) is taken as 0-48 h left
+	near(Sales.Sold({ ["100|5|A"] = 2 }, after, 24), 2.5)
+	-- no time left from the client: band 5
+	eq(Sales.Snapshot({ { 100, 5, nil, "A" } })["100|5|A"][5], 1)
 
 	-- rate over the observations of the last KEEP_DAYS days
 	local now = 1000000
 	eq(Sales.Rate({}, now), nil)
 	near(Sales.Rate({ { now, 6, 12 }, { now - 3600, 2, 12 } }, now), 8)     -- 8 in 24 h
+	local _, hours = Sales.Rate({ { now, 6, 12 }, { now - 3600, 2, 12 } }, now)
+	eq(hours, 24)
 	eq(Sales.Rate({ { now - 30 * 86400, 50, 24 } }, now), nil, "too old")
 	eq(Sales.Text(nil), nil); eq(Sales.Text(8), "~8"); eq(Sales.Text(0.5), "~0.5"); eq(Sales.Text(12.4), "~12")
-
-	-- recording: only tracked items, only scans 15 min - 36 h apart
-	local sales, tracked = {}, { ["2996"] = true }
-	eq(Sales.Record(sales, { ["2996"] = { { 100, 5, nil, "A" }, { 100, 5, nil, "A" } }, ["1"] = { { 1, 1 } } }, tracked, now), 0)
-	eq(sales["1"], nil, "not tracked")
-	eq(Sales.Record(sales, { ["2996"] = { { 100, 5, nil, "A" } } }, tracked, now + 600), 0, "10 minutes: too soon")
-	eq(Sales.Record(sales, { ["2996"] = { { 100, 5, nil, "A" } } }, tracked, now + 6 * 3600), 1)
-	eq(sales["2996"].g[1][2], 5)
-	eq(sales["2996"].g[1][3], 6)
-	near(Sales.Rate(sales["2996"].g, now + 6 * 3600), 20)
-	-- the item gone from the auction house entirely
-	eq(Sales.Record(sales, {}, tracked, now + 12 * 3600), 1)
-	eq(sales["2996"].g[2][2], 5)
-	eq(Sales.Record(sales, {}, tracked, now + 60 * 3600), 0, "two days apart: not compared")
-	eq(Sales.Record(sales, {}, tracked, now + 60 * 3600 + 1200), 1, "20 minutes is enough")
 end)
 
-test("sales: the crafts window says when to scan for Gone/day", function()
+test("sales: scans at irregular times all count", function()
+	local Sales = ns.Sales
+	local now = 1000000
+	local sales, tracked = {}, { ["2996"] = true }
+	local function scan(rows, t) return Sales.Record(sales, { ["2996"] = rows }, tracked, t) end
+	local two = { { 100, 5, nil, "A", 4 }, { 100, 5, nil, "A", 4 } }
+	local one = { { 100, 5, nil, "A", 4 } }
+	eq(Sales.Record(sales, { ["2996"] = two, ["1"] = { { 1, 1 } } }, tracked, now), 0)
+	eq(sales["1"], nil, "not tracked")
+	eq(scan(two, now + 600), 0, "10 minutes: too soon, the first snapshot stays")
+	eq(scan(one, now + 900), 1, "15 minutes")
+	near(sales["2996"].g[1][2], 5); eq(sales["2996"].g[1][4], Sales.METHOD)
+	eq(scan(one, now + 900 + 6 * 3600), 1, "6 hours, nothing gone")
+	eq(sales["2996"].g[2][2], 0)
+	eq(scan({}, now + 900 + 36 * 3600), 1, "30 hours: some of it expired")
+	near(sales["2996"].g[3][2], 5 * (1 - (30 - 12) / 36))
+	eq(scan(two, now + 4 * 86400), 0, "3 days: everything could have expired")
+	eq(scan(one, now + 4 * 86400 + 1200), 1, "and the next one counts again")
+	local rate = Sales.Rate(sales["2996"].g, now + 4 * 86400 + 1200)
+	truthy(rate > 0, "a rate from all of them")
+
+	-- observations from the older method are dropped
+	sales["2996"].g[#sales["2996"].g + 1] = { now + 4 * 86400, 99, 1 }
+	scan(one, now + 4 * 86400 + 2400)
+	for _, o in ipairs(sales["2996"].g) do eq(o[4], Sales.METHOD) end
+end)
+
+test("sales: the crafts window says when to scan for Sold/day", function()
 	local Sales = ns.Sales
 	local sales = Sales:Table()
 	for k in pairs(sales) do sales[k] = nil end

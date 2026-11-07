@@ -1,7 +1,7 @@
 -- Kabobo's Auctions: the crafts window (/ka crafts). This character's learned recipes, one tab per
 -- profession, ranked by profit (or profit per day, with the Sort button): mats cost (AH or
--- vendor), what one craft sells for after the AH cut and deposit, the profit, how many leave the
--- AH per day (an estimate, see Sales), how many you sold in 30 days, and how many are listed.
+-- vendor), what one craft sells for after the AH cut and deposit, the profit, how many sell per
+-- day (an estimate, see Sales), how many you sold in 30 days, and how many are listed.
 --
 -- Built on first open. Reads only saved data (recipes from Crafting, prices from Pricing and
 -- Vendor) and never calls C_TradeSkillUI, so it can open anywhere. Listens to PricesChanged,
@@ -33,7 +33,7 @@ local function updateRow(row, s)
 	local cost = Money(s.cost)
 	if s.cost and s.missing > 0 then cost = cost .. PUI.Color("*", "muted") end
 	local listed = s.listed and tostring(math.floor(s.listed)) or PUI.Color("-", "muted")
-	local gone = ns.Sales.Text(s.rate) or PUI.Color("-", "muted")
+	local gone = ns.Sales.Label(ns.Sales:RateOf(s.id)) or PUI.Color("-", "muted")
 	local sold = ns.Sales:YouSold(s.id, 30)
 	PUI.SetColumns(row, name, cost, Money(s.net), s.profit and Signed(s.profit) or Money(nil), gone,
 		sold > 0 and tostring(sold) or PUI.Color("-", "muted"), listed)
@@ -92,9 +92,9 @@ local function build()
 	window.list:SetPoint("TOPLEFT", window.infoLine, "BOTTOMLEFT", 0, -8)
 	window.list:SetPoint("RIGHT", window, "RIGHT", -left, 0)
 	window.list:SetHeight((ROWS + 1) * S.row)
-	window.list:SetHeaders("Item", "Mats cost", "After cut", "Profit", "Gone/day", "You sold", "Listed")
+	window.list:SetHeaders("Item", "Mats cost", "After cut", "Profit", "Sold/day", "You sold", "Listed")
 
-	window:Footer():SetText("Per craft. Gone/day: left the AH between two scans, incl. expired. Click a recipe to shop.")
+	window:Footer():SetText("Per craft. Sold/day: estimated from your full scans, gray while thin. Click a recipe to shop.")
 end
 
 local function shown()
@@ -129,13 +129,13 @@ function CW:Refresh()
 		window.list:SetEmptyText("No recipes saved yet. Open each of your profession windows once.")
 		return
 	end
-	-- Until Gone/day has data, say how to get it instead of the unpriced count.
+	-- Until Sold/day has data, say how to get it instead of the unpriced count.
 	local next, wait = ns.Sales:Next(time())
 	local note = unpriced .. " without AH prices (listed last)"
 	if next == "first" then
-		note = "Gone/day: full scan now (/ka scan), then again 15 min later"
+		note = "Sold/day: full scan now (/ka scan), then again 15 min later"
 	elseif next == "again" then
-		note = wait > 0 and ("Gone/day: full scan again in " .. PUI.Clock(wait)) or "Gone/day: full scan again now (/ka scan)"
+		note = wait > 0 and ("Sold/day: full scan again in " .. PUI.Clock(wait)) or "Sold/day: full scan again now (/ka scan)"
 	end
 	window.infoLine:SetText(string.format("%d recipes   %s   %s", #rows,
 		PUI.Color(profitable .. " profitable", "good"), PUI.Color(note, next and "gold" or "muted")))

@@ -117,6 +117,16 @@ function U.SamePrice(e)
 	return e.s == "undercut" and e.o ~= nil and e.o == e.u
 end
 
+-- The status of an entry in words, and its color key: "Undercut", "Undercut (same price)",
+-- "Tied, you're first", "Lowest"; nil before it was compared.
+function U.StatusText(e)
+	if U.SamePrice(e) then return "Undercut (same price)", "bad" end
+	if e.s == "undercut" then return "Undercut", "bad" end
+	if e.s == "matched" then return "Tied, you're first", "gold" end
+	if e.s == "lowest" then return "Lowest", "good" end
+	return nil
+end
+
 -- Your auctions as list items, undercut first: { key, entry }.
 function U:List()
 	local mine = U:Mine()

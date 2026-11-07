@@ -33,14 +33,14 @@ local function recipeOf(recipeID)
 end
 
 -- The text beside a recipe: its profit per craft, "*" when some mats have no price, and how
--- many leave the AH per day when known (rate, see Sales). nil when the crafted item has no AH
+-- many sell per day when known (rate, solid: see Sales:RateOf). nil when the crafted item has no AH
 -- price (or the recipe makes no item).
-function RP.Text(summary, rate)
+function RP.Text(summary, rate, solid)
 	if not (summary and summary.profit) then return nil end
 	local text = PUI.SignedMoney(summary.profit)
 	if summary.missing and summary.missing > 0 then text = text .. PUI.Color("*", "muted") end
 	local sold = ns.Sales.Text(rate)
-	if sold then text = text .. PUI.Color("  " .. sold .. "/d", "muted") end
+	if sold then text = text .. PUI.Color("  " .. sold .. "/d", solid and "soft" or "muted") end
 	return text
 end
 

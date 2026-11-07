@@ -39,14 +39,10 @@ local function topRow(row, it)
 	PUI.SetColumns(row, units, it.item, Money(it.net), Signed(it.profit))
 end
 
-local STATUS = {
-	undercut = { "Undercut", "bad" }, matched = { "Same price, before you", "gold" }, lowest = { "Lowest", "good" },
-}
-
 local function mineRow(row, it)
 	local e = it.e
-	local st = ns.Undercut.SamePrice(e) and { "Undercut, same price", "bad" } or STATUS[e.s]
-	local status = st and PUI.Color(st[1], st[2]) or PUI.Color("Not checked yet", "muted")
+	local text, color = ns.Undercut.StatusText(e)
+	local status = text and PUI.Color(text, color) or PUI.Color("Not checked yet", "muted")
 	local qty = e.q and e.q > 1 and PUI.Color(" x" .. e.q, "muted") or ""
 	local name = ns.Pricing.ItemName(tonumber(tostring(it.key):match("^(%d+)")))
 	PUI.SetColumns(row, status, name .. qty, Money(e.u), Money(e.o))
