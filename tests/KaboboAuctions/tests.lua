@@ -1385,6 +1385,11 @@ end)
 
 test("recipe list label: profit, unpriced mark and sales", function()
 	local RP = ns.RecipeProfit
+	-- a long name is shortened to end before the label; a short one is left alone
+	eq(RP.NameWidth(0, 260, 20, 230, 90), 260 - 20 - 90 - RP.GAP - 4)
+	eq(RP.NameWidth(0, 260, 20, 100, 90), nil)
+	eq(RP.NameWidth(0, 260, 20, 230, 230), RP.MIN_NAME)
+	eq(RP.NameWidth(nil, 260, 20, 230, 90), nil)
 	eq(RP.Text(nil), nil)
 	eq(RP.Text({ cost = 100 }), nil, "no AH price for the item")
 	local text = RP.Text({ profit = 500, missing = 0 })
