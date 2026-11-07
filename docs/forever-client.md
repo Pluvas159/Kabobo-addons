@@ -98,6 +98,15 @@ Forever uses the **modern auction house** (`C_AuctionHouse`), with item and comm
   to count purchases (`COMMODITY_PURCHASE_SUCCEEDED`, `AUCTION_HOUSE_PURCHASE_COMPLETED`). Not yet
   confirmed in game: that filling the search box taints nothing (watch for `ADDON_ACTION_BLOCKED`
   in `/ka log`), and `C_AuctionHouse.GetAuctionInfoByID` for item buyouts.
+- **Filling in Blizzard's inputs** (from the `forever` branch source, Shared/; not yet checked in
+  game): `AuctionHouseFrame.SearchBar:StartSearch()` runs a search (Search button and Enter call
+  it). Clicking a commodity calls `CommoditiesBuyFrame:SetItemIDAndPrice(itemID, price)`, which
+  sets the quantity to 1; `BuyDisplay:SetQuantitySelected(n)` sets it. Buy Now reads
+  `BuyDisplay:GetItemID()`, `GetQuantitySelected()` and the unit/total price. In professions,
+  `C_TradeSkillUI.OpenRecipe(recipeID)` makes Blizzard select the recipe (`OPEN_RECIPE_RESPONSE`),
+  and `CraftingPage.CreateMultipleInputBox` holds the count Create reads. Whether values an addon
+  writes there make the game block Buy Now / Create (taint) is not known yet: the shopping list
+  turns its autofill off on `ADDON_ACTION_BLOCKED`.
 - **Undercut labels** in the Auctions tab work (confirmed in game 2026-11-07); they show the result
   of the last scan or search of each item.
 - **Sellers and time left in full scans**: the "Sold/day" estimate keys auctions by unit price,

@@ -86,12 +86,16 @@ Data is kept per realm (ruleset) and faction in the `KaboboAuctionsDB` saved var
   are worth **including what you already have** (so the profit matches the crafts window), what
   is still to buy, what the crafted items sell for after the AH cut, the profit, and how many
   sell per day.
-- The main button walks the steps. **Find** puts the next mat's name in the auction house search
-  box: press Enter, click the item, and the list says how many to buy and what that costs. You buy
-  with the auction house's own **Buy Now**: on this client only Blizzard's buttons may buy, so no
-  addon can. **Craft** puts the next recipe in the profession window's search box: click it and
-  the window's own **Create**. Each purchase and craft is counted, then the next step comes up.
-  Click a row to pick that step, **Skip** to leave one for later.
+- The main button walks the steps. **Find** searches the next mat in the auction house (Browse
+  tab); click it in the results and the quantity to buy is filled in (lowered to what is under
+  your price cap). You buy with the auction house's own **Buy Now**: on this client only
+  Blizzard's buttons may buy, so no addon can. **Craft** selects the next recipe in the profession
+  window and fills in how many to craft; you click **Create**. Each purchase and craft is counted,
+  then the next step comes up. Click a row to pick that step, **Skip** to leave one for later.
+- The list only fills in inputs, never buys or crafts. `/ka autofill` turns the automatic search
+  and filling off (Find then only puts the name in the search box). Should the game ever block Buy
+  Now or Create after the list filled something in, it turns this off by itself and says so:
+  type the quantity yourself and click again.
 - **Price cap**: it advises buying only listings up to 120% of an item's average price of the 14
   days before today (its market value while it has no history; `/ka buycap <percent>` to change),
   and warns with a sound when the auction house's price quote is above the cap, before you
@@ -127,6 +131,7 @@ Data is kept per realm (ruleset) and faction in the `KaboboAuctionsDB` saved var
 | `/ka listprofit` | Profit beside each recipe in the profession window's list (on/off) |
 | `/ka undercut` | Chat alert when someone undercuts or matches your auction (on/off) |
 | `/ka labels` | Undercut status beside your auctions in the Auctions tab (on/off) |
+| `/ka autofill` | Shopping list runs the AH search and fills in quantities and craft counts (on/off) |
 | `/ka buycap <percent>` | Most the shopping list pays per unit, as % of market value (default 120) |
 | `/ka price <item link>` | Print stored prices for an item |
 | `/ka tooltip` | Turn all tooltip lines on or off |
@@ -190,7 +195,9 @@ sends an addon message (`PricesChanged`, `VendorPricesChanged`, `ScanStateChange
   status shown in the Auctions tab and the ledger. Ledger rows
   search their item in the AH. Crafted mats that are cheaper on the AH are priced (and bought) at
   the AH price. Mail read before its buyer name loaded is no longer recorded twice; duplicates
-  saved before are removed. A diagnostic log (`/ka log`).
+  saved before are removed. A diagnostic log (`/ka log`). The shopping list runs the AH search,
+  fills in the quantity and selects recipes with their craft count (`/ka autofill`); buying and
+  crafting stay your clicks.
 - **0.1.0**: first public release. Full and passive AH scans with price history; tooltips with
   market value, lowest price, 14-day average, stack value and what is left after the AH cut and
   deposit; mats cost for items you can craft, priced at the cheaper of AH and vendor and broken

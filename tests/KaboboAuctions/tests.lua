@@ -1394,3 +1394,76 @@ test("saved recipe IDs and profession names for craft steps", function()
 	eq(ns.Crafting:CraftInfo(1), nil)
 	me[186] = nil
 end)
+
+test("shopping autofill: runs the search and fills quantities and counts, never buys", function()
+	local SH = ns.Shopping
+	local me = CR:CharTable()
+	me[197] = { name = "Tailoring", r = { [5000] = "1:1|2589*6,2592*1" }, ids = { [5000] = 3915 } }
+	local items = ns.Pricing:Realm().items
+	items["2589"] = { m = 100, t = time() }
+	local function never(name) return function() error(name .. " must never be called", 2) end end
+	local searched, quantity = 0, nil
+	local box = CreateFrame("EditBox")
+	C_AuctionHouse = {
+		StartCommoditiesPurchase = never("StartCommoditiesPurchase"),
+		ConfirmCommoditiesPurchase = never("ConfirmCommoditiesPurchase"),
+		PlaceBid = never("PlaceBid"),
+		HasFullCommoditySearchResults = function() return true end,
+		GetNumCommoditySearchResults = function() return 1 end,
+		GetCommoditySearchResultInfo = function() return { unitPrice = 100, quantity = 4 } end,
+	}
+	local opened, count
+	C_TradeSkillUI = { CraftRecipe = never("CraftRecipe"), OpenRecipe = function(id) opened = id end }
+	AuctionHouseFrame = {
+		SearchBar = { SearchBox = box, StartSearch = function() searched = searched + 1 end },
+		CommoditiesBuyFrame = { BuyDisplay = {
+			GetItemID = function() return 2589 end,
+			SetQuantitySelected = function(_, n) quantity = n end,
+		} },
+	}
+	ProfessionsFrame = { CraftingPage = { CreateMultipleInputBox = { SetValue = function(_, n) count = n end } } }
+	ns.db.settings.autoFill = true
+	_FIRE("AUCTION_HOUSE_SHOW")
+
+	truthy(SH:Start(5000, 1))
+	eq(SH.current.id, 2589)
+	SH:Find()
+	eq(box:GetText(), ns.Pricing.ItemName(2589)); eq(searched, 1, "the search runs")
+
+	-- clicking the item in the results fills the quantity still to buy
+	SH.OnBuyFrameItem(2589)
+	eq(quantity, 6)
+	quantity = nil
+	SH.OnBuyFrameItem(9999)
+	eq(quantity, nil, "not for another item")
+	-- the listings under the cap lower it
+	_FIRE("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+	eq(quantity, 4)
+	truthy(SH.message:find("Quantity set to 4", 1, true), "says so")
+
+	-- a craft step selects its recipe and fills the count
+	local step = SH.list.steps[#SH.list.steps]
+	eq(step.recipeID, 3915)
+	SH:Find(step)
+	eq(opened, 3915)
+	SH.OnRecipeShown(3915)
+	eq(count, 1)
+	count = nil
+	SH.OnRecipeShown(1234)
+	eq(count, nil, "not for another recipe")
+
+	-- the game blocking something right after: autofill turns itself off
+	_FIRE("ADDON_ACTION_BLOCKED", "KaboboAuctions", "StartCommoditiesPurchase()")
+	eq(ns.db.settings.autoFill, false)
+	SH:Find(SH.list.mats[1])
+	eq(searched, 1, "no more searches")
+	SH.OnBuyFrameItem(2589)
+	eq(quantity, 4, "no more filling")
+
+	ns.db.settings.autoFill = true
+	SH:Clear()
+	_FIRE("AUCTION_HOUSE_CLOSED")
+	C_AuctionHouse, C_TradeSkillUI, AuctionHouseFrame, ProfessionsFrame = nil, nil, nil, nil
+	me[197] = nil
+	items["2589"] = nil
+end)

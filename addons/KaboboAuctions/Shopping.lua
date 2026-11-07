@@ -14,7 +14,12 @@
 -- On this client the purchase functions (StartCommoditiesPurchase, ConfirmCommoditiesPurchase,
 -- PlaceBid) are protected: only Blizzard's own auction house buttons may call them, even from a
 -- click on an addon button (ADDON_ACTION_BLOCKED). So the list never buys. It:
---   - puts the next mat's name in the auction house search box (Find)
+--   - puts the next mat's name in the auction house search box (Find) and, with
+--     settings.autoFill, runs the search and fills in the quantity once you click the item
+--   - for a craft step, selects the recipe (C_TradeSkillUI.OpenRecipe) and fills in the craft
+--     count (autoFill), or puts its name in the profession window's search box
+--   It only fills inputs: Buy Now and Create are always your clicks. Should the game ever block
+--   them after the list filled something in (ADDON_ACTION_BLOCKED), autoFill turns itself off.
 --   - reads the listings the auction house shows for that mat and says how many to buy and what
 --     that costs under the price cap (settings.buyCap x the item's average price of the days
 --     before today, or its market value while it has no history)
@@ -323,9 +328,17 @@ local function professionOpen(prof)
 end
 
 -- What to do for the current step.
+local function autoFill()
+	return ns.db.settings.autoFill and true or false
+end
+
 local function instructions(m)
 	local name = P.ItemName(m.id)
 	if m.kind == "craft" then
+		if autoFill() and m.recipeID then
+			return "Click Craft: it selects " .. name .. " and fills in " .. SH.Remaining(m)
+				.. ". Check it and click Create."
+		end
 		if not professionOpen(m.prof) then
 			return "Open your " .. (m.prof or "profession") .. " window, then click Craft."
 		end
@@ -333,6 +346,10 @@ local function instructions(m)
 			.. " and click Create."
 	end
 	if not ns.Scanner:IsOpen() then return "Open the auction house to buy." end
+	if autoFill() then
+		return "Click Find: it searches " .. name .. ". Click it in the results, check the quantity ("
+			.. SH.Remaining(m) .. ") and click Buy Now."
+	end
 	return "Click Find, press Enter, click " .. name .. " in the results, set the quantity to "
 		.. SH.Remaining(m) .. " and click Buy Now."
 end
@@ -410,8 +427,23 @@ end
 
 -- Puts the step's recipe in the profession window's search box. Like the auction house, only
 -- the text: picking the recipe and Create stay Blizzard's.
+local lastAuto = 0   -- time() autoFill last filled something in Blizzard's windows
+SH.AUTO_WINDOW = 120 -- a block within this many seconds of that is blamed on it
+
+local function usedAuto(what)
+	lastAuto = time()
+	ns:Debug("shopping: autofill", what)
+end
+
 local function findRecipe(m)
 	local name = P.ItemName(m.id)
+	local TS = C_TradeSkillUI
+	if autoFill() and m.recipeID and TS and TS.OpenRecipe then
+		-- The client selects the recipe itself; the count is filled in once it shows (OnRecipeShown).
+		usedAuto("open recipe " .. m.recipeID)
+		ns.Try(TS.OpenRecipe, m.recipeID)
+		return set("idle", "Selected " .. name .. ": check the count (" .. SH.Remaining(m) .. ") and click Create.")
+	end
 	if not professionOpen(m.prof) then
 		return set("idle", "Open your " .. (m.prof or "profession") .. " window, then click Craft.")
 	end
@@ -445,9 +477,71 @@ function SH:Find(m)
 		return set("idle", "Go to the Browse tab of the auction house, then click Find.")
 	end
 	SH.FillSearch(P.ItemName(m.id))
+	local bar = AuctionHouseFrame.SearchBar
+	if autoFill() and bar and bar.StartSearch then
+		usedAuto("search " .. m.id)
+		ns.Try(bar.StartSearch, bar)
+		return set("idle", "Click " .. P.ItemName(m.id) .. " in the results: the quantity fills in. Check it and click Buy Now.")
+	end
 	set("idle", "Press Enter, click " .. P.ItemName(m.id) .. " in the results, set the quantity to "
 		.. SH.Remaining(m) .. " and click Buy Now.")
 end
+
+-- Filling in Blizzard's inputs (autoFill) -------------------------------------------
+
+-- Sets the quantity in the auction house's commodity buy frame when it shows `itemID`.
+local function fillQuantity(itemID, qty)
+	local frame = AuctionHouseFrame and AuctionHouseFrame.CommoditiesBuyFrame
+	local display = frame and frame.BuyDisplay
+	if not (autoFill() and display and display.SetQuantitySelected and qty and qty > 0) then return false end
+	if display.GetItemID and ns.Try(display.GetItemID, display) ~= itemID then return false end
+	usedAuto("quantity " .. itemID .. " x" .. qty)
+	ns.Try(display.SetQuantitySelected, display, qty)
+	return true
+end
+
+-- After the auction house opens an item in its commodity buy frame (hooked below): the current
+-- mat gets the quantity still to buy (the cap advice lowers it once the listings are read).
+function SH.OnBuyFrameItem(itemID)
+	local m = SH.current
+	if not (SH.list and m and m.kind ~= "craft" and m.id == itemID) then return end
+	if fillQuantity(itemID, SH.Remaining(m)) then
+		set("idle", "Quantity set to " .. SH.Remaining(m) .. ": check it and click Buy Now.")
+	end
+end
+
+-- After the profession window shows a recipe (hooked below): the current craft step gets its
+-- count.
+function SH.OnRecipeShown(recipeID)
+	local m = SH.current
+	if not (autoFill() and SH.list and m and m.kind == "craft" and m.recipeID and m.recipeID == recipeID) then return end
+	local page = ProfessionsFrame and ProfessionsFrame.CraftingPage
+	local box = page and page.CreateMultipleInputBox
+	if not (box and box.SetValue) then return end
+	usedAuto("craft count " .. recipeID .. " x" .. SH.Remaining(m))
+	ns.Try(box.SetValue, box, SH.Remaining(m))
+	set("idle", "Set to " .. SH.Remaining(m) .. " " .. P.ItemName(m.id) .. ": check it and click Create.")
+end
+
+-- Hooked after Blizzard's code ran (hooksecurefunc), and filled in on the next frame.
+ns:WhenLoaded("Blizzard_AuctionHouseUI", function()
+	local frame = AuctionHouseFrame and AuctionHouseFrame.CommoditiesBuyFrame
+	if not (frame and frame.SetItemIDAndPrice) then
+		return ns:Debug("commodity buy frame not found, no quantity fill")
+	end
+	hooksecurefunc(frame, "SetItemIDAndPrice", ns:Guard("Shopping quantity", function(_, itemID)
+		C_Timer.After(0, ns:Guard("Shopping quantity", function() SH.OnBuyFrameItem(itemID) end))
+	end))
+end)
+
+ns:WhenLoaded("Blizzard_Professions", function()
+	local form = ProfessionsFrame and ProfessionsFrame.CraftingPage and ProfessionsFrame.CraftingPage.SchematicForm
+	if not (form and form.Init) then return end
+	hooksecurefunc(form, "Init", ns:Guard("Shopping craft count", function(_, recipeInfo)
+		local id = recipeInfo and recipeInfo.recipeID
+		C_Timer.After(0, ns:Guard("Shopping craft count", function() SH.OnRecipeShown(id) end))
+	end))
+end)
 
 -- Leaves the current mat for later and goes to the next one.
 function SH:Skip()
@@ -638,7 +732,9 @@ ns:On("COMMODITY_SEARCH_RESULTS_UPDATED", function(itemID)
 	local qty, total = SH.CommodityOffer(listings, want, cap)
 	if qty == 0 then return noOffer(m, listings[1] and listings[1][1]) end
 	SH.offer = { qty = qty, total = total }
-	local msg = "Set the quantity to " .. qty .. " and click Buy Now: about " .. Money(total)
+	local filled = fillQuantity(itemID, qty)
+	local msg = (filled and ("Quantity set to " .. qty .. ". Check it and click Buy Now: about ")
+		or ("Set the quantity to " .. qty .. " and click Buy Now: about ")) .. Money(total)
 		.. " (" .. Money(math.floor(total / qty)) .. " each, cap " .. Money(cap) .. ")."
 	if qty < want then msg = msg .. " Only " .. qty .. " of " .. want .. " are under your cap." end
 	set("idle", cannotAfford(total) or msg)
@@ -694,6 +790,14 @@ end)
 ns:On("ADDON_ACTION_BLOCKED", function(addon, func)
 	ns:Debug("ADDON_ACTION_BLOCKED", addon, func)
 	if addon ~= ADDON then return end
+	if autoFill() and time() - lastAuto <= SH.AUTO_WINDOW then
+		ns.db.settings.autoFill = false
+		ns:Print("the game blocked " .. tostring(func) .. " after the shopping list filled in a search or a "
+			.. "quantity, so that is off now (/ka autofill turns it back on). Type the quantity or count "
+			.. "yourself (or /reload), then click again.")
+		if SH.list and SH.current then set(SH.state, instructions(SH.current)) end
+		return
+	end
 	ns:Print("the game blocked " .. tostring(func) .. ". Type /reload, then search the auction house by hand.")
 end)
 

@@ -49,6 +49,7 @@ ns:Setup({
 			auctionLabels = true,   -- undercut status beside your auctions in the Auctions tab
 			recipeProfit = true,    -- profit per craft beside each recipe in the profession window
 			craftsSort = "profit",  -- crafts window order: "profit" per craft or "day" (profit x sold/day)
+			autoFill = true,        -- shopping list runs searches and fills quantities / craft counts
 		},
 		account = {
 			lastReplicate = 0,      -- time() of the last full scan (one per account per 15 min)
@@ -87,6 +88,7 @@ ns:Slash({ "/ka", "/kabobo" }, {
 	{ cmd = "craft", toggle = "tooltipCraft", help = "mats cost in tooltips of items you can craft" },
 	{ cmd = "mats", toggle = "matsList", help = "base mats listed under the mats cost" },
 	{ cmd = "undercut", toggle = "undercutAlerts", help = "chat alert when someone lists below or at your auction's price" },
+	{ cmd = "autofill", toggle = "autoFill", help = "shopping list runs the search and fills in quantities (never buys)" },
 	{ cmd = "labels", toggle = "auctionLabels", help = "undercut status beside your auctions in the Auctions tab" },
 	{ cmd = "panel", toggle = "professionPanel", help = "mats cost and profit in the profession window" },
 	{ cmd = "stale", args = "<days>", help = "flag prices not seen for this many days as old",
