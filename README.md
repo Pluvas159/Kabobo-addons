@@ -1,20 +1,20 @@
 <img src="assets/icon.svg" width="64" height="64" alt="">
 
-# Pluvas' addons
+# Kabobo's addons
 
 World of Warcraft addons for **World of Warcraft: Forever**, kept together in one repo.
 
 | Addon | Description |
 | --- | --- |
-| [Pluvas' Auctions](addons/PluvasAuctions) | Auction house price scanning, price history in tooltips, and a sales, profit and gold ledger |
-| [Pluvas' Professions](addons/PluvasProfessions) | Lists the recipes you have not learned yet and where to learn them (trainer, vendor, drop, quest), and with Pluvas' Auctions tells you whether an item is worth disenchanting |
+| [Kabobo's Auctions](addons/KaboboAuctions) | Auction house price scanning, price history in tooltips, crafts ranked by profit with a buy-and-craft shopping list, undercut alerts, and a sales, profit and gold ledger |
+| [Kabobo's Professions](addons/KaboboProfessions) | Lists the recipes you have not learned yet and where to learn them (trainer, vendor, drop, quest), and with Kabobo's Auctions tells you whether an item is worth disenchanting |
 
 ## Download
 
 Get the latest zip from [Releases](https://github.com/Pluvas159/pluvas-addons/releases):
-`pluvas-addons-<version>.zip` has every addon, or pick a single `<Name>-<version>.zip`. Extract it
+`kabobo-addons-<version>.zip` has every addon, or pick a single `<Name>-<version>.zip`. Extract it
 into `World of Warcraft\_forever_\Interface\AddOns`, so that you end up with
-`Interface\AddOns\PluvasAuctions\PluvasAuctions.toc` (not a folder inside a folder), then restart
+`Interface\AddOns\KaboboAuctions\KaboboAuctions.toc` (not a folder inside a folder), then restart
 the game.
 
 ## Install from this repo (development)
@@ -24,7 +24,7 @@ powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 ```
 
 This symlinks every addon into `World of Warcraft\_forever_\Interface\AddOns`, so the game reads
-straight from this repo. In game, they all appear under one **Pluvas' addons** header in the
+straight from this repo. In game, they all appear under one **Kabobo's addons** header in the
 AddOns list. The script looks for the game in the usual places (`D:\World of Warcraft\_forever_`
 first). Use `-WowPath <folder>` or the `WOW_FOREVER_PATH` environment variable to point it
 elsewhere.
@@ -33,7 +33,7 @@ Rerun it whenever addons are added, renamed or removed. It is safe to run any nu
 and it never touches addons that are not from this repo. Other options:
 
 - `-Status`: show what is installed, without changing anything.
-- `-Addon PluvasAuctions`: install only that addon.
+- `-Addon KaboboAuctions`: install only that addon.
 - `-Copy`: copy the files instead of linking them.
 - `-Uninstall`: remove this repo's addons from the game.
 
@@ -52,10 +52,10 @@ npm run sync    # after editing shared/: copy the shared libraries into the addo
 
 All addons are built on two small shared libraries:
 
-- **PluvasCore** ([shared/PluvasCore](shared/PluvasCore)): the runtime. Events and addon messages,
+- **KaboboCore** ([shared/KaboboCore](shared/KaboboCore)): the runtime. Events and addon messages,
   modules, saved variables with migrations, slash commands, error guards, and helpers for
   reading game windows safely.
-- **PluvasUI** ([shared/PluvasUI](shared/PluvasUI)): one look. Style tokens, money formatting,
+- **KaboboUI** ([shared/KaboboUI](shared/KaboboUI)): one look. Style tokens, money formatting,
   windows, lists, grids, tabs, buttons and tooltips.
 
 Each addon embeds its own copy in `Libs/`, so every addon still installs on its own. Edit the
@@ -64,7 +64,7 @@ libraries only in `shared/`, then run `npm run sync`.
 Create a new addon with:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/new-addon.ps1 -Name PluvasThing -Title "Pluvas' Thing"
+powershell -ExecutionPolicy Bypass -File scripts/new-addon.ps1 -Name KaboboThing -Title "Kabobo's Thing"
 ```
 
 - [AGENTS.md](AGENTS.md): repo layout, conventions and workflow, for people and coding agents.

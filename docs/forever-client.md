@@ -24,7 +24,7 @@ one**. Addons therefore use the Retail (Mainline) API, not the Classic Era API.
   several clients.
 - AddOns list grouping, as documented on [warcraft.wiki.gg/wiki/TOC_format](https://warcraft.wiki.gg/wiki/TOC_format):
   - `## Category: <name>` puts the addon under a collapsible header. Every addon in this repo uses
-    `Pluvas' addons`.
+    `Kabobo's addons`.
   - `## Group: <main addon>` nests an addon under a main addon as a sub-list that cannot be
     collapsed. Nested groups are not supported.
   - `## IconTexture` or `## IconAtlas` sets the icon in the list.
@@ -40,6 +40,11 @@ one**. Addons therefore use the Retail (Mainline) API, not the Classic Era API.
   threat, auras, enemy spells). Do not build features that read them in combat.
 - **Hardware events**: posting, bidding, buying out and cancelling auctions each need a real key
   or mouse press. Never chain or automate them.
+- **AH purchases are protected**: `C_AuctionHouse.StartCommoditiesPurchase` gives
+  ADDON_ACTION_BLOCKED even when called from a click on an addon button (seen in game). Treat
+  `ConfirmCommoditiesPurchase` and `PlaceBid` the same: only Blizzard's own buttons can buy.
+  Addons can still search (`SendSearchQuery` works), fill the search box, and `hooksecurefunc`
+  the purchase functions to see what was bought.
 - Taint: never replace Blizzard secure functions or frames. Use `hooksecurefunc` and `HookScript`.
 
 ## Auction house
@@ -69,15 +74,51 @@ Forever uses the **modern auction house** (`C_AuctionHouse`), with item and comm
   returned `1` (Item). Do not call it, or `CalculateCommodityDeposit`, outside the AH's own sell
   flow.
 - **Deposit: a flat 1 silver per auction**, whatever the item or stack size (confirmed in game by
-  Pluvas, 2026-11-07).
+  Kabobo, 2026-11-07).
 - **AH cut: 5%** of the sale (confirmed from AH sale invoices: 1s 50c on 30s, 25c on 5s). The
   neutral auction houses are not checked yet (15% in Classic).
 - Item links: `item:itemID:enchant:gem1:gem2:gem3:gem4:suffixID:...`. Random-suffix items
   ("of the Bear") share an itemID, so key them by `itemID:suffixID`.
 
+- **Auction house UI** (read from the `forever` branch of Gethe/wow-ui-source, November 2026; not
+  yet checked in game): Forever uses the shared Mainline `AuctionHouseFrame`. Its `Camelot/`
+  folder only overrides browse categories (`Blizzard_AuctionData.lua`). Your auctions are
+  `AuctionHouseFrame.AuctionsFrame.AllAuctionsList`, a ScrollBox with a table builder (columns
+  Name fill, Bid 120, Buyout 120, Time left 50), refreshed through `RefreshScrollFrame()`. Rows
+  carry `rowData` from `C_AuctionHouse.GetOwnedAuctionInfo`.
+- **An owned commodity's `buyoutAmount` is per unit** (confirmed from saved data, 2026-11-07:
+  26 Coyote Meat listed at 95s each had `buyoutAmount` 9500, the same as its market value).
+  `GetItemCommodityStatus` can return *Unknown* until the item's data has loaded, so do not divide
+  by the quantity on *Unknown*; Kabobo's Auctions checks the reading against the market value.
+- **Addons cannot buy at all (seen in game 2026-11-07):** `StartCommoditiesPurchase` called from
+  an event handler got no answer; called from a click on an addon button it raised
+  `ADDON_ACTION_BLOCKED KaboboAuctions StartCommoditiesPurchase()`. So the shopping list only fills
+  `AuctionHouseFrame.SearchBar.SearchBox` (Browse tab) and leaves searching and buying to
+  Blizzard's buttons. It hooks `ConfirmCommoditiesPurchase` and `PlaceBid` with `hooksecurefunc`
+  to count purchases (`COMMODITY_PURCHASE_SUCCEEDED`, `AUCTION_HOUSE_PURCHASE_COMPLETED`). Not yet
+  confirmed in game: that filling the search box taints nothing (watch for `ADDON_ACTION_BLOCKED`
+  in `/ka log`), and `C_AuctionHouse.GetAuctionInfoByID` for item buyouts.
+- **Filling in Blizzard's inputs** (from the `forever` branch source, Shared/; not yet checked in
+  game): `AuctionHouseFrame.SearchBar:StartSearch()` runs a search (Search button and Enter call
+  it). Clicking a commodity calls `CommoditiesBuyFrame:SetItemIDAndPrice(itemID, price)`, which
+  sets the quantity to 1; `BuyDisplay:SetQuantitySelected(n)` sets it. Buy Now reads
+  `BuyDisplay:GetItemID()`, `GetQuantitySelected()` and the unit/total price. In professions,
+  `C_TradeSkillUI.OpenRecipe(recipeID)` makes Blizzard select the recipe (`OPEN_RECIPE_RESPONSE`),
+  and `CraftingPage.CreateMultipleInputBox` holds the count Create reads. Whether values an addon
+  writes there make the game block Buy Now / Create (taint) is not known yet: the shopping list
+  turns its autofill off on `ADDON_ACTION_BLOCKED`.
+- **Undercut labels** in the Auctions tab work (confirmed in game 2026-11-07); they show the result
+  of the last scan or search of each item.
+- **Sellers and time left in full scans**: the "Sold/day" estimate keys auctions by unit price,
+  stack size and `ownerFullName`/`owner` from `GetReplicateItemInfo`, and reads
+  `GetReplicateItemTimeLeft(i)` as `Enum.AuctionHouseTimeLeftBand` (Short < 30 min, Medium
+  30 min-2 h, Long 2-12 h, Very long 12-48 h, as on Mainline). Not confirmed in game: whether
+  commodity rows carry a seller (without one, identical stacks are matched by count), and the band
+  boundaries. Without a time left, every auction is taken as 0-48 h.
+
 ## Professions
 
-- Pluvas' Auctions reads recipes with `C_TradeSkillUI.GetAllRecipeIDs()`, `GetRecipeInfo(id)`
+- Kabobo's Auctions reads recipes with `C_TradeSkillUI.GetAllRecipeIDs()`, `GetRecipeInfo(id)`
   (`.learned`), `GetRecipeSchematic(id, false)` (`outputItemID`, `quantityMin/Max`,
   `reagentSlotSchematics[].reagents[1].itemID`, `.quantityRequired`, `.reagentType`) and
   `GetBaseProfessionInfo()`. Confirmed working in game (2026-11-07): the recipe panel showed the
@@ -89,6 +130,15 @@ Forever uses the **modern auction house** (`C_AuctionHouse`), with item and comm
   the bottom edge of the schematic form, so anything drawn there must stay above it.
 - Not confirmed: whether `GetBaseProfessionInfo().professionID` equals the skill line from
   `GetProfessionInfo`, so profession pruning matches on name as well.
+- **Recipe list** (read from Mainline; not yet checked in game):
+  `ProfessionsFrame.CraftingPage.RecipeList.ScrollBox` holds the rows; a recipe row's
+  `GetElementData():GetData().recipeInfo` is its `TradeSkillRecipeInfo`. Kabobo's Auctions draws
+  a profit label on each row (`ScrollUtil.AddAcquiredFrameCallback`, `OnScroll`,
+  `OnDataRangeChanged`) and fills `RecipeList.SearchBox` for the shopping list's craft steps.
+  Crafting (`C_TradeSkillUI.CraftRecipe`) is left to Blizzard's Create button, like buying.
+- Crafts are counted with `UNIT_SPELLCAST_SUCCEEDED("player", castGUID, spellID)`, assuming a
+  recipe ID equals its craft's spell ID as on Mainline (not yet confirmed on Forever). Recipes
+  saved before recipe IDs were kept are counted from the crafted item's bag count instead.
 
 ### Read from Blizzard's Forever UI source
 
@@ -103,7 +153,7 @@ yet been checked in game.
   and Sources entries from the filter menu, and wraps `Professions.GenerateCraftingDataProvider`
   to call `C_TradeSkillUI.SetShowUnlearned(false)` after *every* list build. Do not flip
   `SetShowUnlearned` to get them back: Blizzard resets it on each rebuild, and fighting that can
-  cause a rebuild loop. Pluvas' Professions reads the recipe IDs itself and shows its own panel.
+  cause a rebuild loop. Kabobo's Professions reads the recipe IDs itself and shows its own panel.
 - Blizzard's recipe list uses `C_TradeSkillUI.GetFilteredRecipeIDs()`, which follows those filters.
   For unlearned recipes the schematic form calls `C_TradeSkillUI.GetRecipeSourceText(recipeID)`,
   which returns text like `|cFFFFD200Vendor: |rName|n|cFFFFD200Zone: |r...`.
@@ -112,7 +162,7 @@ yet been checked in game.
   the first two. A function missing from the docs is not proof it is missing from the client.
 - `TradeSkillRecipeInfo` fields include `name`, `learned`, `icon`, `categoryID`, `sourceType`,
   `hyperlink`, `isDummyRecipe`. It has no field for the skill needed to learn a recipe.
-- **Confirmed in game (2026-11-07, build 70862, `/pprof dump` on Tailoring):**
+- **Confirmed in game (2026-11-07, build 70862, `/kprof dump` on Tailoring):**
   - `GetAllRecipeIDs()` exists and includes unlearned recipes: 429 unlearned for Tailoring.
   - `GetRecipeSourceText(id)` returns `nil` for unlearned recipes, and `GetRecipeInfo` has **no
     `sourceType` field** at all. Forever has no recipe source data, so sources must be learned
@@ -133,8 +183,8 @@ yet been checked in game.
 
 ## Disenchanting
 
-The client has no API for disenchant results, so Pluvas' Professions carries its own tables in
-`addons/PluvasProfessions/Disenchant.lua`. They are Classic's rules by item level, quality and
+The client has no API for disenchant results, so Kabobo's Professions carries its own tables in
+`addons/KaboboProfessions/Disenchant.lua`. They are Classic's rules by item level, quality and
 weapon or armor (uncommon armor 75% dust, 20% essence, ~5% shard; weapons swap dust and essence;
 rares give a shard; epics give shards or Nexus Crystals). Rules, not item lists, so new Forever
 items are covered as long as they have a normal item level and quality.

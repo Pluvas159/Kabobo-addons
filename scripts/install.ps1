@@ -43,7 +43,7 @@
 .EXAMPLE
     .\scripts\install.ps1 -Status
 .EXAMPLE
-    .\scripts\install.ps1 -Addon PluvasAuctions -WowPath "E:\Games\World of Warcraft\_forever_"
+    .\scripts\install.ps1 -Addon KaboboAuctions -WowPath "E:\Games\World of Warcraft\_forever_"
 #>
 [CmdletBinding()]
 param(

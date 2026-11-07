@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-    Scaffolds a new addon: addons\<Name>\ with a TOC, Core.lua and the shared PluvasUI library
-    (Libs\PluvasUI), plus tests\<Name>\tests.lua.
+    Scaffolds a new addon: addons\<Name>\ with a TOC, Core.lua and the shared KaboboUI library
+    (Libs\KaboboUI), plus tests\<Name>\tests.lua.
 
 .EXAMPLE
-    .\scripts\new-addon.ps1 -Name PluvasBags -Title "Pluvas' Bags" -Notes "Bag sorting for WoW: Forever."
+    .\scripts\new-addon.ps1 -Name KaboboBags -Title "Kabobo's Bags" -Notes "Bag sorting for WoW: Forever."
 #>
 [CmdletBinding()]
 param(
@@ -31,9 +31,9 @@ Write-File (Join-Path $addonDir "$Name.toc") @"
 ## Interface: 16001
 ## Title: $Title
 ## Notes: $Notes
-## Author: Pluvas
+## Author: Kabobo
 ## Version: 0.1.0
-## Category: Pluvas' addons
+## Category: Kabobo's addons
 ## IconTexture: Interface\Icons\INV_Misc_QuestionMark
 ## SavedVariables: ${Name}DB
 
@@ -44,7 +44,7 @@ Write-File (Join-Path $addonDir 'Core.lua') @"
 -- ${Title}: saved variables and slash commands.
 --
 -- The runtime (events, addon messages, modules, error guards, identity) comes from
--- Libs/PluvasCore, the look from Libs/PluvasUI. Put features in their own files, each a module:
+-- Libs/KaboboCore, the look from Libs/KaboboUI. Put features in their own files, each a module:
 --   local M = ns:NewModule("Thing")   function M:OnLogin() end
 --
 -- Addon messages: (list the ones this addon sends here)
@@ -78,11 +78,11 @@ test("saved variables are created", function()
 end)
 "@
 
-# Embed every shared library (PluvasCore, PluvasUI) and load them first from the TOC.
+# Embed every shared library (KaboboCore, KaboboUI) and load them first from the TOC.
 & node (Join-Path $repo 'scripts\sync-shared.js') --embed $Name
 if ($LASTEXITCODE -ne 0) { throw "Could not embed the shared libraries (is Node installed?)." }
 
 Write-Host "Created addons\$Name and tests\$Name."
 Write-Host "Next: npm test -- $Name, then .\scripts\install.ps1 (symlinks it into WoW; restart the game)."
 Write-Host "Add the addon to the tables in README.md and AGENTS.md."
-Write-Host "Runtime: shared\PluvasCore\README.md. UI: shared\PluvasUI\README.md."
+Write-Host "Runtime: shared\KaboboCore\README.md. UI: shared\KaboboUI\README.md."
