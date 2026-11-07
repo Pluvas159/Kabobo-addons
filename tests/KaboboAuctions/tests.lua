@@ -1419,6 +1419,7 @@ test("shopping autofill: runs the search and fills quantities and counts, never 
 		CommoditiesBuyFrame = { BuyDisplay = {
 			GetItemID = function() return 2589 end,
 			SetQuantitySelected = function(_, n) quantity = n end,
+			GetQuantitySelected = function() return quantity or 1 end,
 		} },
 	}
 	ProfessionsFrame = { CraftingPage = { CreateMultipleInputBox = { SetValue = function(_, n) count = n end } } }
@@ -1444,14 +1445,24 @@ test("shopping autofill: runs the search and fills quantities and counts, never 
 
 	-- clicking the item in the results fills the quantity still to buy
 	SH.OnBuyFrameItem(2589)
+	_RUN_TIMERS()
 	eq(quantity, 6)
 	quantity = nil
 	SH.OnBuyFrameItem(9999)
+	_RUN_TIMERS()
 	eq(quantity, nil, "not for another item")
-	-- the listings under the cap lower it
+	-- the listings load and the auction house sets it back to 1: filled again, lowered to the cap
+	quantity = 1
 	_FIRE("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
-	eq(quantity, 4)
 	truthy(SH.message:find("Quantity set to 4", 1, true), "says so")
+	_RUN_TIMERS()
+	eq(quantity, 4)
+	-- a quantity you typed yourself stays
+	quantity = 3
+	_FIRE("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+	_RUN_TIMERS()
+	eq(quantity, 3, "yours is kept")
+	quantity = 4
 
 	-- a craft step selects its recipe and fills the count
 	local step = SH.list.steps[#SH.list.steps]
@@ -1469,8 +1480,10 @@ test("shopping autofill: runs the search and fills quantities and counts, never 
 	eq(ns.db.settings.autoFill, false)
 	SH:Find(SH.list.mats[1])
 	eq(searched, 1, "no more searches")
+	quantity = 1
 	SH.OnBuyFrameItem(2589)
-	eq(quantity, 4, "no more filling")
+	_RUN_TIMERS()
+	eq(quantity, 1, "no more filling")
 
 	ns.db.settings.autoFill = true
 	SH:Clear()

@@ -493,13 +493,41 @@ end
 -- Filling in Blizzard's inputs (autoFill) -------------------------------------------
 
 -- Sets the quantity in the auction house's commodity buy frame when it shows `itemID`.
-local function fillQuantity(itemID, qty)
+SH.REFILL_DELAYS = { 0, 0.3, 1 }   -- seconds: fill, and fill again if the AH set it back
+
+local filledQty = nil   -- the quantity autofill last put in the buy frame
+
+-- The commodity buy frame's display while it shows `itemID`, or nil.
+local function buyDisplayFor(itemID)
 	local frame = AuctionHouseFrame and AuctionHouseFrame.CommoditiesBuyFrame
 	local display = frame and frame.BuyDisplay
-	if not (autoFill() and display and display.SetQuantitySelected and qty and qty > 0) then return false end
-	if display.GetItemID and ns.Try(display.GetItemID, display) ~= itemID then return false end
+	if not (display and display.SetQuantitySelected) then return nil end
+	if display.GetItemID and ns.Try(display.GetItemID, display) ~= itemID then return nil end
+	return display
+end
+
+-- Sets the quantity in the buy frame while it shows `itemID`. Only over the frame's own 1 (what
+-- it starts with, and what it goes back to when its listings load) or the quantity autofill put
+-- there before, so a quantity you typed is never changed.
+local function fillQuantity(itemID, qty)
+	local display = autoFill() and qty and qty > 0 and buyDisplayFor(itemID)
+	if not display then return false end
+	local now = display.GetQuantitySelected and ns.Try(display.GetQuantitySelected, display)
+	if now and now ~= 1 and now ~= filledQty then return false end
+	if now == qty then return true end
 	usedAuto("quantity " .. itemID .. " x" .. qty)
+	filledQty = qty
 	ns.Try(display.SetQuantitySelected, display, qty)
+	return true
+end
+
+-- Fills it on the next frame, and again a little later in case the auction house reset it to 1
+-- when the item's listings loaded. Returns whether the buy frame shows the item.
+local function fillQuantitySoon(itemID, qty)
+	if not (autoFill() and buyDisplayFor(itemID)) then return false end
+	for _, delay in ipairs(SH.REFILL_DELAYS) do
+		C_Timer.After(delay, ns:Guard("Shopping quantity", function() fillQuantity(itemID, qty) end))
+	end
 	return true
 end
 
@@ -530,7 +558,7 @@ end)
 function SH.OnBuyFrameItem(itemID)
 	local m = SH.current
 	if not (SH.list and m and m.kind ~= "craft" and m.id == itemID) then return end
-	if fillQuantity(itemID, SH.Remaining(m)) then
+	if fillQuantitySoon(itemID, SH.Remaining(m)) then
 		set("idle", "Quantity set to " .. SH.Remaining(m) .. ": check it and click Buy Now.")
 	end
 end
@@ -555,7 +583,8 @@ ns:WhenLoaded("Blizzard_AuctionHouseUI", function()
 		return ns:Debug("commodity buy frame not found, no quantity fill")
 	end
 	hooksecurefunc(frame, "SetItemIDAndPrice", ns:Guard("Shopping quantity", function(_, itemID)
-		C_Timer.After(0, ns:Guard("Shopping quantity", function() SH.OnBuyFrameItem(itemID) end))
+		filledQty = nil   -- a newly opened item starts from the frame's own 1
+		SH.OnBuyFrameItem(itemID)
 	end))
 end)
 
@@ -757,7 +786,7 @@ ns:On("COMMODITY_SEARCH_RESULTS_UPDATED", function(itemID)
 	local qty, total = SH.CommodityOffer(listings, want, cap)
 	if qty == 0 then return noOffer(m, listings[1] and listings[1][1]) end
 	SH.offer = { qty = qty, total = total }
-	local filled = fillQuantity(itemID, qty)
+	local filled = fillQuantitySoon(itemID, qty)
 	local msg = (filled and ("Quantity set to " .. qty .. ". Check it and click Buy Now: about ")
 		or ("Set the quantity to " .. qty .. " and click Buy Now: about ")) .. Money(total)
 		.. " (" .. Money(math.floor(total / qty)) .. " each, cap " .. Money(cap) .. ")."
