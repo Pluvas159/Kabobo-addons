@@ -30,6 +30,11 @@ you want it.
 - Click a group header to fold it away. Forever gives no source for most recipes, and its list
   includes recipes that may not be in the game yet, so those start folded under **No source info**.
   Visiting a trainer moves the recipes it teaches out of that pile.
+- **Profit before you learn it** (with Kabobo's Auctions): each recipe shows what one craft
+  earns, e.g. `+1s 20c` (`*` when some mats have no AH price yet). Hover it for the mats cost,
+  what the item sells for after the AH cut, and about how many sell per day. It needs AH prices
+  for the item and its mats (a full scan), and the recipe read from the profession window once;
+  recipes known only from a trainer show no profit.
 
 ## Disenchanting
 
@@ -102,5 +107,6 @@ The readers send `RecipesChanged` after each change, and the panel redraws. The 
 ## Changelog
 
 - **Unreleased**: tooltips say whether an item is worth disenchanting (needs Kabobo's Auctions),
-  and flag verdicts that rest on old AH prices.
+  and flag verdicts that rest on old AH prices. Unlearned recipes show their profit per craft
+  (needs Kabobo's Auctions).
 - **0.1.0**: first public release.

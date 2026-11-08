@@ -63,6 +63,24 @@ local function rightText(e)
 	return right
 end
 
+-- One craft's profit from Kabobo's Auctions, when it is loaded and the recipe's mats are known:
+-- profit, mats cost, value after the AH cut, unpriced mats, sold per day, and whether that rate
+-- is backed by enough scans. nil otherwise.
+function Panel.Profit(e)
+	local api = ns:Peer("KaboboAuctions")
+	if not (api and api.CraftProfit and e.out and e.recipe) then return nil end
+	local profit, cost, net, missing = api.CraftProfit(e.out, e.recipe)
+	local rate, solid
+	if api.SoldPerDay then rate, solid = api.SoldPerDay(e.out) end
+	return { profit = profit, cost = cost, net = net, missing = missing or 0, rate = rate, solid = solid }
+end
+
+-- The profit beside a recipe: "+1s 20c", "*" when some mats have no price. "" without one.
+function Panel.ProfitText(p)
+	if not (p and p.profit) then return "" end
+	return PUI.SignedMoney(p.profit) .. (p.missing > 0 and PUI.Color("*", "muted") or "")
+end
+
 local function updateRow(row, e)
 	if e.header then
 		PUI.SetIconRow(row, {
@@ -78,7 +96,10 @@ local function updateRow(row, e)
 	elseif e.learnable == false then
 		name = PUI.Color(name, "muted")
 	end
-	PUI.SetIconRow(row, { icon = e.icon, text = name, right = rightText(e), desaturate = e.learnable == false })
+	local right = rightText(e)
+	local profit = Panel.ProfitText(Panel.Profit(e))
+	if profit ~= "" then right = (right ~= "" and (right .. "  ") or "") .. profit end
+	PUI.SetIconRow(row, { icon = e.icon, text = name, right = right, desaturate = e.learnable == false })
 end
 
 local function place(v)
@@ -123,6 +144,19 @@ local function tooltipLines(e)
 		add("No source known yet. Trainers and vendors you visit fill this in.", "muted")
 	end
 	if e.grey then add("Turns grey at skill " .. e.grey .. ".", "muted") end
+	local p = Panel.Profit(e)
+	if p and (p.cost or p.net) then
+		add(" ")
+		if p.cost then
+			add("Mats cost: " .. PUI.Money(p.cost) .. (p.missing > 0 and PUI.Color(" (" .. p.missing .. " mats unpriced)", "muted") or ""))
+		end
+		if p.net then add("Sells for " .. PUI.Money(p.net) .. " after the AH cut") end
+		if p.profit then add("Profit per craft: " .. PUI.SignedMoney(p.profit), p.profit > 0 and "good" or "bad") end
+		if p.rate then
+			local r = p.rate >= 10 and tostring(math.floor(p.rate + 0.5)) or string.format("%.1f", p.rate)
+			add("Sells about " .. r .. " a day" .. (p.solid and "" or " (few scans yet)"), "muted")
+		end
+	end
 	return lines
 end
 
@@ -184,6 +218,7 @@ local function build()
 	summaryText:SetPoint("RIGHT", window, "RIGHT", -S.pad, 0)
 
 	list = PUI.List(window, {
+		rightWidth = 150,   -- skill / cost, then the profit from Kabobo's Auctions
 		update = updateRow,
 		onEnter = rowEnter,
 		onClick = rowClick,

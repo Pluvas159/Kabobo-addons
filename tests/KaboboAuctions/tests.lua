@@ -1262,6 +1262,18 @@ test("profession panel flags old prices, including disenchanting", function()
 	items["2589"], items["5001"] = nil, nil
 end)
 
+test("API: profit of a recipe you have not learned, and sold per day", function()
+	local api = ns:Peer("KaboboAuctions")
+	local items = ns.db.realms[ns.realmKey].items
+	items["2589"] = { m = 100, t = time() }
+	items["7001"] = { m = 1000, t = time() }
+	local profit, cost, net, missing = api.CraftProfit(7001, "1:1|2589*2,7002*1")
+	eq(cost, 200); eq(net, 1000 - 50 - 100); eq(profit, 850 - 200); eq(missing, 1)
+	eq((api.CraftProfit(7003, "1:1|2589*2")), nil, "no AH price for the item")
+	eq(api.SoldPerDay(7001), nil, "no scans compared yet")
+	items["2589"], items["7001"] = nil, nil
+end)
+
 test("API: how old a price is", function()
 	local api = ns:Peer("KaboboAuctions")
 	eq(api.StaleAge(1000, 1000 + 86400), nil)

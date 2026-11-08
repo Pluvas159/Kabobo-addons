@@ -103,7 +103,8 @@ local function collect(prof, catalog, vendors)
 			if key then seen[key] = true end
 			local label, plain = Rows.ParseSource(r.s)
 			entries[#entries + 1] = { id = id, name = r.n, icon = r.i, label = label, source = plain,
-				grey = r.g, trainer = key and catalog[key], vendor = key and vendors[key] }
+				grey = r.g, trainer = key and catalog[key], vendor = key and vendors[key],
+				out = r.o, recipe = r.r }
 		end
 	end
 	for key in pairs(prof.tu or {}) do
@@ -138,7 +139,7 @@ end
 --   opts    = { level = player level, hideUnknown = bool, collapsed = { [groupKey] = true },
 --               vendors = vendor catalog (db.vendor) }
 -- Returns rows, summary. Rows are { header = true, key, text, count, collapsed } or entries
--- { id, name, icon, label, source, trainer, vendor, grey, group, learnable }.
+-- { id, name, icon, label, source, trainer, vendor, grey, group, learnable, out, recipe }.
 -- learnable is true (can learn now), false (needs more skill or level) or nil (not a trainer
 -- recipe). summary = { total, learnable }.
 function Rows.Build(prof, catalog, opts)

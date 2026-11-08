@@ -196,7 +196,8 @@ sends an addon message (`PricesChanged`, `VendorPricesChanged`, `ScanStateChange
   the AH price. Mail read before its buyer name loaded is no longer recorded twice; duplicates
   saved before are removed. A diagnostic log (`/ka log`). The shopping list runs the AH search,
   fills in the quantity and selects recipes with their craft count (`/ka autofill`); buying and
-  crafting stay your clicks.
+  crafting stay your clicks. Shares craft profit and sold per day with Kabobo's Professions, which
+  shows the profit of recipes you have not learned yet.
 - **0.1.0**: first public release. Full and passive AH scans with price history; tooltips with
   market value, lowest price, 14-day average, stack value and what is left after the AH cut and
   deposit; mats cost for items you can craft, priced at the cheaper of AH and vendor and broken

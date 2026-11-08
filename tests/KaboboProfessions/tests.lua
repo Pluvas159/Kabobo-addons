@@ -293,6 +293,14 @@ C_TradeSkillUI = {
 		sourceCalls = sourceCalls + 1
 		return recipes[id] and recipes[id].source
 	end,
+	GetRecipeSchematic = function(id)
+		if id ~= 3755 then return nil end
+		return { outputItemID = 4238, quantityMin = 1, quantityMax = 1, reagentSlotSchematics = {
+			{ reagents = { { itemID = 2996 } }, quantityRequired = 3 },
+			{ reagents = { { itemID = 2320 } }, quantityRequired = 1 },
+			{ reagents = { { itemID = 9999 } }, quantityRequired = 1, required = false },   -- optional
+		} }
+	end,
 }
 
 local function openWindow()
@@ -312,6 +320,8 @@ test("profession scan stores unlearned recipes with their source", function()
 	eq(p.u[3755].t, 3, "raw source type kept")
 	eq(p.u[7630].t, nil)
 	eq(p.u[3755].g, 70, "grey level kept")
+	eq(p.u[3755].o, 4238, "what it makes"); eq(p.u[3755].r, "1:1|2996*3,2320*1", "its basic mats")
+	eq(p.u[7630].o, nil, "no schematic, no mats")
 	eq(p.u[7630].n, "Blue Linen Vest")
 	eq(p.u[2963], nil, "learned recipe left out")
 	eq(p.u[9999], nil, "dummy recipe left out")
@@ -319,6 +329,27 @@ test("profession scan stores unlearned recipes with their source", function()
 	eq(R.current, "Tailoring")
 	_FIRE("TRADE_SKILL_CLOSE")
 	eq(R.current, nil)
+end)
+
+test("unlearned recipes show their profit from Kabobo's Auctions", function()
+	local Panel = ns.Panel
+	local e = { name = "Linen Bag", out = 4238, recipe = "1:1|2996*3,2320*1" }
+	KaboboAddons = KaboboAddons or {}
+	local old = KaboboAddons.KaboboAuctions
+	KaboboAddons.KaboboAuctions = nil
+	eq(Panel.Profit(e), nil, "nothing without Kabobo's Auctions")
+	eq(Panel.ProfitText(Panel.Profit(e)), "")
+	local asked
+	KaboboAddons.KaboboAuctions = {
+		CraftProfit = function(out, recipe) asked = out .. " " .. recipe; return 120, 380, 500, 1 end,
+		SoldPerDay = function() return 4, true end,
+	}
+	local p = Panel.Profit(e)
+	eq(asked, "4238 1:1|2996*3,2320*1")
+	eq(p.profit, 120); eq(p.cost, 380); eq(p.net, 500); eq(p.rate, 4)
+	eq(Panel.ProfitText(p), PUI.SignedMoney(120) .. PUI.Color("*", "muted"))
+	eq(Panel.Profit({ name = "Trainer only" }), nil, "no mats known")
+	KaboboAddons.KaboboAuctions = old
 end)
 
 test("a complete read replaces the saved list", function()

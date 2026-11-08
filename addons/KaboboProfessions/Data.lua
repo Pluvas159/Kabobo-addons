@@ -2,7 +2,8 @@
 --
 -- Per character, per profession (db.chars[charKey][professionName]):
 --   id    = professionID, skill = current skill, max = max skill, scanned = time()
---   u     = { [recipeID] = { n = name, i = icon, s = source text, g = grey at skill, t = source type } }
+--   u     = { [recipeID] = { n = name, i = icon, s = source text, g = grey at skill, t = source type,
+--             o = itemID it makes, r = recipe string "minYield:maxYield|itemID*qty,..." } }
 --           unlearned recipes, read from the profession window. On Forever s and t are always nil.
 --   tu    = { [lowercase name] = true }
 --           trainer recipes this character had not learned when it last saw a trainer for them.

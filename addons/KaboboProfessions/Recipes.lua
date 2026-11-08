@@ -74,6 +74,31 @@ local function recipeIDs(TS, api)
 	return nil, false
 end
 
+-- A recipe schematic as (outputItemID, recipe string "minYield:maxYield|itemID*qty,..."), the
+-- format Kabobo's Auctions prices, or nil (makes no item, or no basic mats). Optional and
+-- finishing reagents are not part of the cost.
+function R.FromSchematic(schematic)
+	if type(schematic) ~= "table" or not schematic.outputItemID then return nil end
+	local basic = Enum and Enum.CraftingReagentType and Enum.CraftingReagentType.Basic
+	local parts = {}
+	for _, slot in ipairs(schematic.reagentSlotSchematics or {}) do
+		local isBasic
+		if slot.reagentType ~= nil and basic ~= nil then
+			isBasic = slot.reagentType == basic
+		else
+			isBasic = slot.required ~= false
+		end
+		local first = slot.reagents and slot.reagents[1]
+		if isBasic and first and first.itemID and (slot.quantityRequired or 0) > 0 then
+			parts[#parts + 1] = math.floor(first.itemID) .. "*" .. math.floor(slot.quantityRequired)
+		end
+	end
+	if #parts == 0 then return nil end
+	local lo = math.floor(schematic.quantityMin or 1)
+	local hi = math.floor(schematic.quantityMax or lo)
+	return schematic.outputItemID, lo .. ":" .. hi .. "|" .. table.concat(parts, ",")
+end
+
 local function readRecipe(TS, api, id, unlearned, learned)
 	local info = api:Call(TS.GetRecipeInfo, id)
 	if type(info) ~= "table" or not info.name or info.isDummyRecipe then return end
@@ -92,6 +117,11 @@ local function readRecipe(TS, api, id, unlearned, learned)
 		-- Raw source type number, if a later client fills it (Forever build 70862 does not).
 		t = type(info.sourceType) == "number" and info.sourceType or nil,
 	}
+	-- What it makes and from what, so Kabobo's Auctions can price it before you learn it.
+	if TS.GetRecipeSchematic then
+		local out, recipe = R.FromSchematic(api:Call(TS.GetRecipeSchematic, id, false))
+		unlearned[id].o, unlearned[id].r = out, recipe
+	end
 end
 
 function R:Scan(force)

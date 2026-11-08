@@ -136,6 +136,9 @@ Forever uses the **modern auction house** (`C_AuctionHouse`), with item and comm
   a profit label on each row (`ScrollUtil.AddAcquiredFrameCallback`, `OnScroll`,
   `OnDataRangeChanged`) and fills `RecipeList.SearchBox` for the shopping list's craft steps.
   Crafting (`C_TradeSkillUI.CraftRecipe`) is left to Blizzard's Create button, like buying.
+- Kabobo's Professions also reads `GetRecipeSchematic(id, false)` for **unlearned** recipes, to
+  price them before they are learned. Not yet confirmed that Forever returns schematics for
+  recipes the character does not know; without one the recipe just shows no profit.
 - Crafts are counted with `UNIT_SPELLCAST_SUCCEEDED("player", castGUID, spellID)`, assuming a
   recipe ID equals its craft's spell ID as on Mainline (not yet confirmed on Forever). Recipes
   saved before recipe IDs were kept are counted from the crafted item's bag count instead.

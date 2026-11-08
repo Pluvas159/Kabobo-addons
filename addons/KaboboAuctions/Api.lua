@@ -28,4 +28,22 @@ ns:Expose({
 	StaleAge = function(seen, now)
 		return P.StaleAge(seen, now or time())
 	end,
+
+	-- One craft of a recipe, also one this character has not learned. recipe is a recipe string
+	-- ("minYield:maxYield|itemID*qty,itemID*qty", as Kabobo's Professions saves them), made the
+	-- item outputItemID. Mats are priced as everywhere in Kabobo's Auctions (the cheaper of AH and
+	-- vendor; mats you can craft from their own mats when that is cheaper). Returns the profit
+	-- (nil without an AH price for the item or for every mat), the mats cost, what the items bring
+	-- in after the AH cut and deposit, and how many mats had no price.
+	CraftProfit = function(outputItemID, recipe)
+		local C = ns.Crafting
+		local s = C.CraftSummary(recipe, C.MatPrice, C.RecipeOf, (C.AHPrice(outputItemID)))
+		return s.profit, s.cost, s.net, s.missing or 0
+	end,
+
+	-- About how many of an item sell per day on the AH, from the player's full scans (an
+	-- estimate), and whether enough scans back it; nil before two scans were compared.
+	SoldPerDay = function(itemID)
+		return ns.Sales:RateOf(itemID)
+	end,
 })
