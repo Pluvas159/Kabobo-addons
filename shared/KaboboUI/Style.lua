@@ -30,6 +30,7 @@ UI.Fonts = {
 	label = "GameFontNormalSmall",
 	body = "GameFontHighlightSmall",
 	muted = "GameFontDisableSmall",
+	bar = "TextStatusBarText", -- text drawn on Blizzard's status bars (experience, reputation)
 }
 
 -- Spacing and sizes in pixels.

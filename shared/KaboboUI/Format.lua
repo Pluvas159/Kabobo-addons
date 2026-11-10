@@ -60,6 +60,39 @@ function UI.Age(seconds)
 	return floor(seconds / 86400) .. "d"
 end
 
+-- "1h 5m", "2d 3h", "12m", "45s"; "?" for nil or negative. Two units at most, for durations
+-- people read at a glance (time to level).
+function UI.Duration(seconds)
+	if not seconds or seconds < 0 then return "?" end
+	local s = floor(seconds)
+	if s < 60 then return s .. "s" end
+	if s < 3600 then return floor(s / 60) .. "m" end
+	local big, small, a, b
+	if s < 86400 then
+		big, small, a, b = floor(s / 3600), floor((s % 3600) / 60), "h", "m"
+	else
+		big, small, a, b = floor(s / 86400), floor((s % 86400) / 3600), "d", "h"
+	end
+	if small == 0 then return big .. a end
+	return big .. a .. " " .. small .. b
+end
+
+-- Large counts in a few characters: 950, 1.2k, 12.3k, 123k, 1.2M. Rounds down, so a value
+-- never reads as the next unit (999,999 is "999k", not "1000k").
+function UI.Short(n)
+	if not n then return "?" end
+	local sign = ""
+	if n < 0 then sign, n = "-", -n end
+	local div, unit
+	if n < 1000 then return sign .. floor(n) end
+	if n < 1000000 then div, unit = 1000, "k" else div, unit = 1000000, "M" end
+	local v = n / div
+	if v >= 100 then return sign .. floor(v) .. unit end
+	local tenths = floor(v * 10)
+	if tenths % 10 == 0 then return sign .. floor(tenths / 10) .. unit end
+	return sign .. floor(tenths / 10) .. "." .. (tenths % 10) .. unit
+end
+
 -- "m:ss" countdown.
 function UI.Clock(seconds)
 	seconds = math.max(0, floor(seconds))

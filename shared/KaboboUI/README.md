@@ -29,7 +29,7 @@ Addon code never hard-codes the look. Everything comes from `Style.lua`:
 | Token | Use |
 | --- | --- |
 | `PUI.Color(text, key)`, `PUI.RGB(key)` | `accent` (Kabobo blue), `gold` (headings), `text`, `soft`, `muted` (hints, no data), `good` (available, profit), `bad` (missing, loss), `warn` (out of date) |
-| `PUI.Fonts` | `title`, `heading`, `label`, `body`, `muted` |
+| `PUI.Fonts` | `title`, `heading`, `label`, `body`, `muted`, `bar` (text on Blizzard's status bars) |
 | `PUI.Sizes` | `pad` 14, `contentTop` 30, `gap` 4, `row` 18, `icon` 16, `button` 22, `tab` 20 |
 | `PUI.Templates` | the Blizzard templates behind windows and buttons |
 | `PUI.Coins` | coin colors, letters and icons behind `PUI.Money` |
@@ -110,6 +110,7 @@ PUI.Money(123456)          -- "12g 34s 56c" with colored letters; nil gives a mu
 PUI.MoneyIcons(123456)     -- same with coin icons (tooltips, panels)
 PUI.SignedMoney(-500, icons)  -- green "+" / red "-" before the amount
 PUI.Age(3600)              -- "1h"        PUI.Clock(65) -- "1:05"
+PUI.Duration(3900)         -- "1h 5m"     PUI.Short(12345) -- "12.3k"
 ```
 
 ### Label/value lines
