@@ -11,13 +11,22 @@ local _, ns = ...
 ns:Setup({
 	title = "Kabobo's QoL",
 	savedVariables = "KaboboQoLDB",
-	dbVersion = 1,
+	dbVersion = 2,
+	migrations = {
+		[2] = function(db)
+			for _, c in pairs(db.chars or {}) do
+				ns.Rates.AddSince(c.xp, c.saved)
+				ns.Rates.AddSince(c.rep, c.saved)
+			end
+		end,
+	},
 	defaults = {
 		settings = {
 			xp = true,  -- experience per hour and time to level on the experience bar
 			rep = true, -- reputation per hour and time to the next standing on the reputation bar
 		},
-		-- [charKey] = { saved = time(), xp = tracker, rep = tracker, faction = factionID }.
+		-- [charKey] = { saved = time(), xp = tracker, rep = tracker, faction = factionID }
+		-- (trackers: see Rates.lua).
 		-- Kept so a /reload does not throw away the last 15 minutes (see Progress.lua).
 		chars = {},
 	},

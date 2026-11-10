@@ -122,7 +122,7 @@ ns:On("UPDATE_FACTION", onRep)
 
 -- Status for display ---------------------------------------------------------------
 
--- Anything gained in the last window, i.e. a rate that is still changing.
+-- Anything gained in the last hour, i.e. a rate that is still changing.
 function P:HasRecent(now)
 	local c = ns.db and ns.charKey and ns.db.chars[ns.charKey]
 	if not c or not c.xp then return false end
@@ -132,15 +132,22 @@ function P:HasRecent(now)
 end
 
 local function status(tracker, now, remaining)
-	local perHour, recent = R.Recent(tracker, now)
+	local perHour, recent = R.Recent(tracker, now, R.WINDOW)
+	local hourPerHour = R.Recent(tracker, now, R.HOUR)
+	local elapsed = now - tracker.start
+	local history = R.History(tracker, now)
 	return {
 		perHour = perHour,          -- last 15 minutes
 		recent = recent,            -- gained in the last 15 minutes
+		ttl = R.TimeTo(remaining, perHour),
+		-- The last hour. Until there are more than 15 minutes of gains it is the same as the above.
+		hourPerHour = hourPerHour,
+		hourTtl = R.TimeTo(remaining, hourPerHour),
+		hasHour = history > R.WINDOW,
 		session = R.Session(tracker, now),
 		gained = tracker.total,
-		elapsed = now - tracker.start,
+		elapsed = elapsed,
 		remaining = remaining,
-		ttl = R.TimeTo(remaining, perHour),
 	}
 end
 
@@ -166,19 +173,26 @@ function P:RepStatus(now)
 	return s
 end
 
-function P:PrintStatus()
+-- " 12.3k/h, level 24 in 42m; last hour 9.8k/h, 55m; session 8.1k/h" for chat.
+function P.Describe(s, goal)
 	local PUI = ns.KaboboUI
+	local line = " " .. PUI.Short(s.perHour) .. "/h"
+	if s.ttl then line = line .. ", " .. goal .. " in " .. PUI.Duration(s.ttl) end
+	if s.hasHour then
+		line = line .. "; last hour " .. PUI.Short(s.hourPerHour) .. "/h"
+		if s.hourTtl then line = line .. ", " .. PUI.Duration(s.hourTtl) end
+	end
+	return line .. "; session " .. PUI.Short(s.session) .. "/h"
+end
+
+function P:PrintStatus()
 	local now = time()
 	local xp, rep = P:XPStatus(now), P:RepStatus(now)
 	if xp then
-		local line = "experience " .. PUI.Short(xp.perHour) .. "/h (session " .. PUI.Short(xp.session) .. "/h)"
-		if xp.ttl then line = line .. ", level " .. (xp.level + 1) .. " in " .. PUI.Duration(xp.ttl) end
-		ns:Print(line)
+		ns:Print("experience" .. P.Describe(xp, "level " .. (xp.level + 1)))
 	end
 	if rep then
-		local line = rep.name .. " " .. PUI.Short(rep.perHour) .. "/h (session " .. PUI.Short(rep.session) .. "/h)"
-		if rep.ttl then line = line .. ", next standing in " .. PUI.Duration(rep.ttl) end
-		ns:Print(line)
+		ns:Print(rep.name .. P.Describe(rep, "next standing"))
 	end
 	if not xp and not rep then ns:Print("no experience to earn and no faction on the reputation bar.") end
 end

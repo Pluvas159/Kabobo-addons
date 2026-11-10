@@ -1,19 +1,21 @@
 -- Rates: gains over time, as plain tables so they can be saved. No game state is read here.
 --
--- A tracker is { start = time(), total = n, t = { times }, v = { amounts } }: when counting
--- began, everything gained since, and the gains of the last WINDOW seconds (one entry per second
--- with a gain), oldest first.
+-- A tracker is { start = time(), since = time(), total = n, t = { times }, v = { amounts } }:
+-- when counting began, from when on the gains in t/v are complete, everything gained since
+-- start, and the gains of the last KEEP seconds (one entry per second with a gain), oldest first.
 local _, ns = ...
 local R = ns:NewModule("Rates")
 
 local floor, min, max = math.floor, math.min, math.max
 
-R.WINDOW = 15 * 60  -- the "recent" rate and the time to level use the last 15 minutes
+R.WINDOW = 15 * 60  -- the rate on the bar and its time to level use the last 15 minutes
+R.HOUR = 60 * 60    -- and a second, steadier estimate the last hour
+R.KEEP = R.HOUR     -- gains older than this are dropped
 -- A rate needs some time behind it: one kill ten seconds after login is not 40k an hour.
 R.MIN_SPAN = 2 * 60
 
 function R.New(now)
-	return { start = now, total = 0, t = {}, v = {} }
+	return { start = now, since = now, total = 0, t = {}, v = {} }
 end
 
 -- Counts a gain. Losses (reputation going down) are not gains and are left out.
@@ -29,9 +31,9 @@ function R.Add(tracker, amount, now)
 	end
 end
 
--- Drops gains older than the window.
-function R.Prune(tracker, now, window)
-	local cutoff = now - (window or R.WINDOW)
+-- Drops gains older than KEEP.
+function R.Prune(tracker, now)
+	local cutoff = now - R.KEEP
 	local t, v = tracker.t, tracker.v
 	local drop = 0
 	while t[drop + 1] and t[drop + 1] <= cutoff do drop = drop + 1 end
@@ -43,15 +45,25 @@ function R.Prune(tracker, now, window)
 	tracker.t, tracker.v = nt, nv
 end
 
--- Per hour over the last window, or since counting began when that is shorter. Returns the rate
--- and the amount gained in the window.
+-- How long the gains in t/v cover, in seconds.
+function R.History(tracker, now)
+	return now - (tracker.since or tracker.start)
+end
+
+-- Per hour over the last window, or over the history when that is shorter. Returns the rate and
+-- the amount gained in the window.
 function R.Recent(tracker, now, window)
 	window = window or R.WINDOW
-	R.Prune(tracker, now, window)
+	R.Prune(tracker, now)
+	local cutoff = now - window
+	local t, v = tracker.t, tracker.v
 	local sum = 0
-	for i = 1, #tracker.v do sum = sum + tracker.v[i] end
+	for i = #t, 1, -1 do
+		if t[i] <= cutoff then break end
+		sum = sum + v[i]
+	end
 	if sum <= 0 then return 0, 0 end
-	local span = min(window, max(now - tracker.start, R.MIN_SPAN))
+	local span = min(window, max(R.History(tracker, now), R.MIN_SPAN))
 	return sum / span * 3600, sum
 end
 
@@ -75,4 +87,11 @@ function R.XPGain(old, new)
 		return max(0, old.max - old.xp) + new.xp
 	end
 	return new.xp - old.xp
+end
+
+-- Trackers saved by 0.1.0 before the hour estimate kept only the last 15 minutes of gains, and
+-- had no `since`. Without it the hour rate spreads those 15 minutes over a whole hour.
+function R.AddSince(tracker, saved)
+	if type(tracker) ~= "table" or tracker.since then return end
+	tracker.since = max(tracker.start or 0, (saved or 0) - R.WINDOW)
 end

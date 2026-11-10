@@ -63,12 +63,24 @@ end)
 
 test("rate uses the last 15 minutes once counting is older than that", function()
 	local t = R.New(0)
-	R.Add(t, 1000, 100)    -- leaves the window at 1000
+	R.Add(t, 1000, 100)    -- leaves the 15 minutes at 1000
 	R.Add(t, 300, 950)
 	local perHour, recent = R.Recent(t, 1000)
 	eq(recent, 300); near(perHour, 300 / 900 * 3600)
-	eq(#t.t, 1, "old gain pruned")
+	eq(#t.t, 2, "kept for the hour")
 	near(R.Session(t, 1000), 1300 / 1000 * 3600)
+end)
+
+test("hour rate uses the last hour, or since counting began", function()
+	local t = R.New(0)
+	R.Add(t, 1000, 100)
+	R.Add(t, 300, 950)
+	local perHour, recent = R.Recent(t, 1000, R.HOUR)
+	eq(recent, 1300); near(perHour, 1300 / 1000 * 3600)
+	R.Add(t, 200, 3800)    -- the gain at 100 is now more than an hour old
+	perHour, recent = R.Recent(t, 3800, R.HOUR)
+	eq(recent, 500); near(perHour, 500)
+	eq(#t.t, 2, "gains older than an hour are dropped")
 end)
 
 test("a fresh session is not judged on a few seconds", function()
@@ -82,6 +94,29 @@ test("no gains in the window means no rate", function()
 	R.Add(t, 100, 10)
 	local perHour, recent = R.Recent(t, 2000)
 	eq(perHour, 0); eq(recent, 0)
+end)
+
+test("rates only average over the time the gains cover", function()
+	-- counting began two hours ago, but the gains are only complete for the last 15 minutes
+	local t = R.New(0)
+	t.since = 7200 - 900
+	R.Add(t, 2250, 7000)
+	near((R.Recent(t, 7200, R.HOUR)), 9000, 1e-6, "not 2250 an hour")
+	near((R.Recent(t, 7200, R.WINDOW)), 9000)
+	near(R.Session(t, 7200), 2250 / 2)
+end)
+
+test("trackers saved before the hour estimate get a since", function()
+	local t = { start = 0, total = 0, t = {}, v = {} }
+	R.AddSince(t, 7200)
+	eq(t.since, 7200 - R.WINDOW)
+	local young = { start = 7000, total = 0, t = {}, v = {} }
+	R.AddSince(young, 7200)
+	eq(young.since, 7000)
+	local current = R.New(5)
+	R.AddSince(current, 7200)
+	eq(current.since, 5, "left alone")
+	R.AddSince(nil, 1)
 end)
 
 test("time to a goal", function()
@@ -188,12 +223,20 @@ test("hover tooltip lists the rates", function()
 	eq(GameTooltip:IsShown(), false)
 end)
 
-test("rates fade once gains leave the window", function()
+test("after 15 minutes without gains only the hour is left; after an hour, nothing", function()
 	now = now + R.WINDOW + 1
+	eq(P:HasRecent(now), true)
+	B:Refresh()
+	local s = P:XPStatus(now)
+	eq(s.perHour, 0)
+	truthy(s.hourPerHour > 0, "hour rate")
+	truthy(s.hasHour, "more than 15 minutes of gains")
+	local text = label(1, 4):GetText()
+	truthy(text and text:find("^hour: ") and text:find("to level", 1, true), "hour-only text: " .. tostring(text))
+	now = now + R.HOUR
 	eq(P:HasRecent(now), false)
 	B:Refresh()
 	eq(label(1, 4):IsShown(), false)
-	eq(P:XPStatus(now).perHour, 0)
 	truthy(P:XPStatus(now).session > 0, "session rate stays")
 end)
 
@@ -224,4 +267,24 @@ test("bar text formats", function()
 	eq(B.RepText({ perHour = 320, ttl = 4200, reaction = 4 }), "320 rep/h" .. B.SEP .. "1h 10m to Friendly")
 	eq(B.RepText({ perHour = 320, ttl = 60, reaction = 8 }), "320 rep/h" .. B.SEP .. "1m to next")
 	eq(B.RepText({ perHour = 320 }), "320 rep/h")
+	-- the hour estimate joins once counting is older than 15 minutes, when it differs
+	local both = { perHour = 12345, ttl = 2520, hourPerHour = 9800, hourTtl = 3300, hasHour = true }
+	eq(B.XPText(both), "12.3k xp/h" .. B.SEP .. "42m to level (hour: 55m)")
+	both.hasHour = false
+	eq(B.XPText(both), "12.3k xp/h" .. B.SEP .. "42m to level")
+	eq(B.XPText({ perHour = 12345, ttl = 2520, hourTtl = 2530, hasHour = true }), "12.3k xp/h" .. B.SEP .. "42m to level")
+	eq(B.XPText({ perHour = 0, hourPerHour = 9800, hourTtl = 3300, hasHour = true }), "hour: 9.8k xp/h" .. B.SEP .. "55m to level")
+end)
+
+test("tooltip has both estimates once counting is older than 15 minutes", function()
+	local s = { perHour = 12345, ttl = 2520, hourPerHour = 9800, hourTtl = 3300, hasHour = true,
+		session = 9000, gained = 20000, elapsed = 4000, remaining = 8640 }
+	local lines = B.TooltipLines(s, "xp", "Level 24")
+	local labels = {}
+	for i, l in ipairs(lines) do labels[i] = l[1] end
+	eq(table.concat(labels, "|"), "Last 15 min|Last hour|This session|Gained|Level 24|   at the last 15 min|   at the last hour")
+	eq(lines[2][2], "9.8k xp/h")
+	eq(lines[6][2], "42m"); eq(lines[7][2], "55m")
+	s.hasHour = false
+	eq(#B.TooltipLines(s, "xp", "Level 24"), 5)
 end)

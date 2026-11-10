@@ -1,5 +1,5 @@
 -- BarText: a small line at the right end of Blizzard's experience and reputation bars
--- ("12.3k xp/h · 42m to level"), and a tooltip with the details on hover.
+-- ("12.3k xp/h · 42m to level (hour: 55m)"), and a tooltip with the details on hover.
 --
 -- The bars belong to StatusTrackingBarManager (Blizzard_StatusTrackingBar): each of its two
 -- containers holds one bar of every kind and shows one at a time, so both containers' bars get a
@@ -29,24 +29,37 @@ local function standingLabel(reaction)
 end
 B.StandingLabel = standingLabel
 
--- Bar text from a Progress status, or nil when there is no recent rate to show.
+-- Bar text from a Progress status, or nil when nothing was gained in the last hour:
+--   "12.3k xp/h  ·  42m to level (hour: 55m)"
+-- The rate and its estimate are from the last 15 minutes; the estimate from the last hour joins
+-- in brackets once counting is older than 15 minutes (before that the two are the same). After
+-- 15 minutes without gains only the hour is left: "hour: 9.8k xp/h  ·  55m to level".
+local function barText(s, unit, goal)
+	if not s then return nil end
+	if s.perHour > 0 then
+		local text = PUI.Short(s.perHour) .. " " .. unit .. "/h"
+		if s.ttl then
+			local quarter = PUI.Duration(s.ttl)
+			text = text .. B.SEP .. quarter .. " to " .. goal
+			local hour = s.hasHour and s.hourTtl and PUI.Duration(s.hourTtl)
+			if hour and hour ~= quarter then text = text .. " (hour: " .. hour .. ")" end
+		end
+		return text
+	end
+	if s.hourPerHour and s.hourPerHour > 0 then
+		local text = "hour: " .. PUI.Short(s.hourPerHour) .. " " .. unit .. "/h"
+		if s.hourTtl then text = text .. B.SEP .. PUI.Duration(s.hourTtl) .. " to " .. goal end
+		return text
+	end
+	return nil
+end
+
 function B.XPText(s)
-	if not s or s.perHour <= 0 then return nil end
-	local text = PUI.Short(s.perHour) .. " xp/h"
-	if s.ttl then text = text .. B.SEP .. PUI.Duration(s.ttl) .. " to level" end
-	return text
+	return barText(s, "xp", "level")
 end
 
 function B.RepText(s)
-	if not s or s.perHour <= 0 then return nil end
-	local text = PUI.Short(s.perHour) .. " rep/h"
-	local nextStanding = s.ttl and standingLabel(s.reaction and s.reaction + 1)
-	if nextStanding then
-		text = text .. B.SEP .. PUI.Duration(s.ttl) .. " to " .. nextStanding
-	elseif s.ttl then
-		text = text .. B.SEP .. PUI.Duration(s.ttl) .. " to next"
-	end
-	return text
+	return barText(s, "rep", s and standingLabel(s.reaction and s.reaction + 1) or "next")
 end
 
 local function count(n)
@@ -54,15 +67,18 @@ local function count(n)
 	return BreakUpLargeNumbers and BreakUpLargeNumbers(n) or tostring(n)
 end
 
--- Tooltip lines (label/value) from a Progress status.
-function B.TooltipLines(s, unit, toWhat)
-	local lines = {
-		{ "Last 15 min", PUI.Short(s.perHour) .. " " .. unit .. "/h" },
-		{ "This session", PUI.Short(s.session) .. " " .. unit .. "/h" },
-		{ "Gained", count(s.gained) .. " in " .. PUI.Duration(s.elapsed) },
-	}
-	if s.ttl and toWhat then
-		lines[#lines + 1] = { toWhat, PUI.Duration(s.ttl) .. PUI.Color(" (" .. count(s.remaining) .. " to go)", "soft") }
+-- Tooltip lines (label/value) from a Progress status. goal names what comes next ("Level 24").
+function B.TooltipLines(s, unit, goal)
+	local function rate(perHour) return PUI.Short(perHour) .. " " .. unit .. "/h" end
+	local function eta(ttl) return ttl and PUI.Duration(ttl) or PUI.Color("-", "muted") end
+	local lines = { { "Last 15 min", rate(s.perHour) } }
+	if s.hasHour then lines[#lines + 1] = { "Last hour", rate(s.hourPerHour) } end
+	lines[#lines + 1] = { "This session", rate(s.session) }
+	lines[#lines + 1] = { "Gained", count(s.gained) .. " in " .. PUI.Duration(s.elapsed) }
+	if goal and s.remaining and s.remaining > 0 then
+		lines[#lines + 1] = { goal, count(s.remaining) .. " to go" }
+		lines[#lines + 1] = { "   at the last 15 min", eta(s.ttl), color = "soft" }
+		if s.hasHour then lines[#lines + 1] = { "   at the last hour", eta(s.hourTtl), color = "soft" } end
 	end
 	return lines
 end
