@@ -222,6 +222,25 @@ above). Not yet checked in game.
   game type (`TRAINER_FILTER_*_BOOL` in the TOC), so on Forever they probably reset every session.
 - `BuyTrainerService(i)` is what the Train button calls. Never automate it.
 
+## Experience and reputation bars
+
+Read from `Blizzard_StatusTrackingBar` on the `forever` branch (see above), November 2026. Not
+yet checked in game.
+
+- Forever uses the Mainline bars: `StatusTrackingBarManager` with two containers
+  (`MainStatusTrackingBarContainer`, `SecondaryStatusTrackingBarContainer`, also in
+  `StatusTrackingBarManager.barContainers`). Each container creates one bar of every kind in
+  `container.bars[StatusTrackingBarInfo.BarsEnum.X]` (Reputation 1, Experience 4) and shows one
+  at a time. Experience has priority 0, Reputation 2 (`Camelot/StatusTrackingBarConstants.lua`).
+- A bar has `StatusBar` and `OverlayFrame.Text` (Blizzard's own text, centered at y = 1, shown on
+  hover or with the `xpBarText` CVar). The container is 1192 x 17.
+- The reputation bar reads `C_Reputation.GetWatchedFactionData()`: `factionID`, `name`,
+  `reaction`, `currentStanding`, `currentReactionThreshold`, `nextReactionThreshold`.
+  `currentStanding` counts from the bottom of Hated, so it only grows across standings.
+- The paragon tooltip on the reputation bar uses `EmbeddedItemTooltip`, not `GameTooltip`.
+- Kabobo's QoL adds a font string to each experience and reputation bar's `OverlayFrame` and
+  hooks `OnEnter`/`OnLeave`.
+
 ## Mail
 
 - The server loads 50 mails at a time.

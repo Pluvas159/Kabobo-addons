@@ -8,6 +8,7 @@ World of Warcraft addons for **World of Warcraft: Forever**, kept together in on
 | --- | --- |
 | [Kabobo's Auctions](addons/KaboboAuctions) | Auction house price scanning, price history in tooltips, crafts ranked by profit with a buy-and-craft shopping list, undercut alerts, and a sales, profit and gold ledger |
 | [Kabobo's Professions](addons/KaboboProfessions) | Lists the recipes you have not learned yet and where to learn them (trainer, vendor, drop, quest), and with Kabobo's Auctions tells you whether an item is worth disenchanting |
+| [Kabobo's QoL](addons/KaboboQoL) | Small quality-of-life touches: experience and reputation per hour, and the time to your next level, right on the experience and reputation bars |
 
 ## Download
 
