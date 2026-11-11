@@ -50,6 +50,18 @@ test("age and clock", function()
 	eq(UI.Clock(65), "1:05"); eq(UI.Clock(-3), "0:00")
 end)
 
+test("duration shows at most two units", function()
+	eq(UI.Duration(45), "45s"); eq(UI.Duration(720), "12m"); eq(UI.Duration(3600), "1h")
+	eq(UI.Duration(3900), "1h 5m"); eq(UI.Duration(86400 + 3 * 3600 + 59), "1d 3h"); eq(UI.Duration(2 * 86400), "2d")
+	eq(UI.Duration(nil), "?"); eq(UI.Duration(-1), "?")
+end)
+
+test("short numbers round down and never reach the next unit", function()
+	eq(UI.Short(0), "0"); eq(UI.Short(950.7), "950"); eq(UI.Short(1000), "1k"); eq(UI.Short(1250), "1.2k")
+	eq(UI.Short(12345), "12.3k"); eq(UI.Short(123456), "123k"); eq(UI.Short(999999), "999k")
+	eq(UI.Short(1250000), "1.2M"); eq(UI.Short(-1500), "-1.5k"); eq(UI.Short(nil), "?")
+end)
+
 -- Label/value lines
 
 test("tooltip lines: accent labels by default, any color on request", function()

@@ -1,0 +1,15 @@
+## Interface: 16001
+## Title: Kabobo's QoL
+## Notes: Small quality-of-life touches for World of Warcraft: Forever. Experience and reputation per hour, and the time to your next level, right on the experience and reputation bars.
+## Author: Kabobo
+## Version: 0.1.0
+## Category: Kabobo's addons
+## IconTexture: Interface\Icons\INV_Misc_PocketWatch_01
+## SavedVariables: KaboboQoLDB
+
+Libs\KaboboCore\KaboboCore.xml
+Libs\KaboboUI\KaboboUI.xml
+Core.lua
+Rates.lua
+Progress.lua
+BarText.lua
