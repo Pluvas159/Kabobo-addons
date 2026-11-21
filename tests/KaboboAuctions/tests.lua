@@ -302,6 +302,40 @@ test("tooltip shows stack total and net after cut and deposit", function()
 	items["9999"] = nil
 end)
 
+test("tooltip stack size survives item locations outside your bags", function()
+	local saved = C_Item
+	-- As the game does: IsValid/DoesItemExist raise a usage error on an empty location.
+	local function location(bag)
+		return {
+			bag = bag,
+			HasAnyLocation = function(self) return self.bag ~= nil end,
+			IsValid = function(self) return C_Item.DoesItemExist(self) end,
+		}
+	end
+	C_Item = {
+		GetItemLocation = function(guid) return location(guid == "bags" and 0 or nil) end,
+		DoesItemExist = function(loc)
+			if loc.bag == nil then error("bad argument #1 to 'DoesItemExist'") end
+			return true
+		end,
+		GetStackCount = function() return 7 end,
+	}
+	eq(ns.Tooltip.StackCount("bags"), 7)
+	eq(ns.Tooltip.StackCount("mail"), nil)
+
+	-- A location without the mixin's HasAnyLocation still cannot raise.
+	C_Item.GetItemLocation = function() return { bag = nil } end
+	eq(ns.Tooltip.StackCount("mail"), nil)
+
+	-- And the hover itself adds lines without an error.
+	ns.db.realms[ns.realmKey].items["9998"] = { m = 100, n = 90, q = 1, t = time() }
+	local count = 0
+	_HOVER({ AddDoubleLine = function() count = count + 1 end }, { id = 9998, guid = "mail" })
+	truthy(count > 0)
+	ns.db.realms[ns.realmKey].items["9998"] = nil
+	C_Item = saved
+end)
+
 test("tooltip shows your average sale, and learns of new sales", function()
 	local tx = L:Transactions()
 	local before = #tx

@@ -22,14 +22,24 @@ local function tooltipItem(link, id, data)
 		count = 1,
 	}
 	-- Only real items carry a GUID; links in chat, AH rows and vendor items do not.
-	if data and data.guid and C_Item and C_Item.GetItemLocation then
-		local loc = ns.Try(C_Item.GetItemLocation, data.guid)
-		if loc and loc.IsValid and loc:IsValid() then
-			local n = ns.Try(C_Item.GetStackCount, loc)
-			if type(n) == "number" and n > 0 then item.count = n end
-		end
-	end
+	if data and data.guid then item.count = T.StackCount(data.guid) or 1 end
 	return item
+end
+
+-- The stack size of the item with this GUID, or nil when it is not in your bags or bank.
+-- GetItemLocation also answers for items elsewhere (mail, loot, trade, ...) with a location
+-- that has neither a bag slot nor an equipment slot, and ItemLocation:IsValid() on that raises
+-- a usage error from C_Item.DoesItemExist. So every call is protected and an empty location
+-- is skipped first.
+function T.StackCount(guid)
+	if not (C_Item and C_Item.GetItemLocation) then return nil end
+	local loc = ns.Try(C_Item.GetItemLocation, guid)
+	if type(loc) ~= "table" then return nil end
+	if loc.HasAnyLocation and not ns.Try(loc.HasAnyLocation, loc) then return nil end
+	if not ns.Try(C_Item.DoesItemExist, loc) then return nil end
+	local n = ns.Try(C_Item.GetStackCount, loc)
+	if type(n) == "number" and n > 0 then return n end
+	return nil
 end
 
 -- Adds the price lines for item ({ key, id, name, count }) to a tooltip.

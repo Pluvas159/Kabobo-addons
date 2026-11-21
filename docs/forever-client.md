@@ -33,6 +33,10 @@ one**. Addons therefore use the Retail (Mainline) API, not the Classic Era API.
   (`C_AddOns.GetAddOnMetadata`, `C_Item.*`, `C_Container.*`, ...).
 - Tooltips: use `TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, fn)`.
   `GameTooltip:HookScript("OnTooltipSetItem")` does not exist on the modern client.
+- `C_Item.GetItemLocation(data.guid)` also returns a location for items that are not in your
+  bags or equipped (mail, loot, trade, ...). That location is empty, and `loc:IsValid()` on it
+  raises "bad argument #1 to 'DoesItemExist'". Check `loc:HasAnyLocation()` first and pcall the
+  rest (confirmed 2026-11, it disabled the tooltip prices after three hovers).
 
 ## Restrictions inherited from the Midnight client
 
